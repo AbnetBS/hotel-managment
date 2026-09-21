@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#102526" />
+  <title>Clove House — Hotel Operations</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">C</div>
+        <div>
+          <div class="brand-name">CLOVE HOUSE</div>
+          <div class="brand-subtitle">HOTEL OPERATIONS</div>
+        </div>
+      </div>
+
+      <div class="property-switcher">
+        <div class="property-avatar">CH</div>
+        <div class="property-copy">
+          <strong>Clove House Addis</strong>
+          <span>Bole · Main property</span>
+        </div>
+        <span class="icon icon-chevron-down" data-icon="chevron-down"></span>
+      </div>
+
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <div class="nav-label">WORKSPACE</div>
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon" data-icon="grid"></span><span>Overview</span></button>
+        <button class="nav-item" data-view="rooms"><span class="nav-icon" data-icon="door"></span><span>Rooms & beds</span><span class="nav-count">16</span></button>
+        <button class="nav-item" data-view="reservations"><span class="nav-icon" data-icon="calendar"></span><span>Reservations</span><span class="nav-count amber">7</span></button>
+        <button class="nav-item" data-view="stays"><span class="nav-icon" data-icon="users"></span><span>Active stays</span></button>
+        <button class="nav-item" data-view="folio"><span class="nav-icon" data-icon="receipt"></span><span>Guest folios</span></button>
+
+        <div class="nav-label nav-label-spaced">SERVICE OPERATIONS</div>
+        <button class="nav-item" data-view="pos"><span class="nav-icon" data-icon="utensils"></span><span>Restaurant POS</span><span class="nav-dot"></span></button>
+        <button class="nav-item" data-view="kitchen"><span class="nav-icon" data-icon="chef-hat"></span><span>Kitchen display</span><span class="nav-count coral">4</span></button>
+        <button class="nav-item" data-view="housekeeping"><span class="nav-icon" data-icon="sparkles"></span><span>Housekeeping</span><span class="nav-count coral">8</span></button>
+        <button class="nav-item" data-view="maintenance"><span class="nav-icon" data-icon="wrench"></span><span>Maintenance</span><span class="nav-count amber">3</span></button>
+
+        <div class="nav-label nav-label-spaced">INSIGHTS & CONTROL</div>
+        <button class="nav-item" data-view="reports"><span class="nav-icon" data-icon="chart"></span><span>Reports</span></button>
+        <button class="nav-item" data-view="settings"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="support-card">
+          <div class="support-icon"><span data-icon="life-buoy"></span></div>
+          <div><strong>Need a hand?</strong><span>Open the operations guide</span></div>
+          <span class="icon" data-icon="arrow-up-right"></span>
+        </div>
+        <div class="user-block">
+          <div class="user-avatar">MA</div>
+          <div class="user-copy"><strong>Marta Ayele</strong><span>General Manager</span></div>
+          <button class="icon-button subtle" aria-label="Open user menu"><span data-icon="more-horizontal"></span></button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="main-shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="mobile-menu icon-button" id="mobile-menu" aria-label="Open navigation"><span data-icon="menu"></span></button>
+          <div class="breadcrumbs"><span>Workspace</span><span class="crumb-separator">/</span><strong id="page-title">Overview</strong></div>
+        </div>
+        <div class="topbar-actions">
+          <div class="global-search">
+            <span data-icon="search"></span>
+            <input id="global-search" type="search" placeholder="Search guests, rooms, folios..." aria-label="Search" />
+            <kbd>⌘ K</kbd>
+          </div>
+          <button class="icon-button notification-button" aria-label="Notifications"><span data-icon="bell"></span><i></i></button>
+          <div class="topbar-divider"></div>
+          <div class="top-date"><span data-icon="calendar-days"></span><span id="current-date">Monday, 21 September 2026</span></div>
+        </div>
+      </header>
+
+      <main id="main-content" tabindex="-1"></main>
+    </section>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-container" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
