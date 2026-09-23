@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, clientRef } from '../lib/api.js';
+import { api, clientRef, fileToDataUrl } from '../lib/api.js';
 import { useApp, useNow, useTopic } from '../lib/store.jsx';
 import { computeRoomCharge, BILLING_MODES } from '../../../shared/billing.js';
-import { money, formatElapsed, formatCountdown, initials, dateTimeOf, toLocalInput, fromLocalInput } from '../lib/format.js';
+import { money, formatElapsed, formatCountdown, initials, dateTimeOf, toLocalInput, fromLocalInput, relative } from '../lib/format.js';
 import { Icon } from '../lib/icons.jsx';
 import { Modal, Drawer, Field, Pill, Empty, Stat } from '../lib/ui.jsx';
 import { NewOrderModal } from '../components/OrderPieces.jsx';
@@ -427,6 +427,11 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
               <div className="k">ID</div>
               <div className="v">{folio?.guest?.id_type || '—'}</div>
               <div className="tiny muted" style={{ marginTop: 4 }}>{folio?.guest?.id_number || ''}</div>
+              {folio?.guest?.id_document_url ? (
+                <a className="tiny" href={folio.guest.id_document_url} target="_blank" rel="noreferrer" style={{ color: 'var(--teal-dark)' }}>
+                  document on file
+                </a>
+              ) : null}
             </div>
             <div>
               <div className="k">Guests</div>
@@ -541,7 +546,16 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
         </div>
       </div>
 
-      {modal === 'payment' ? <PaymentModal stayId={folio.id} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); loadRooms(); }} /> : null}
+      {modal === 'payment' ? (
+        <PaymentModal
+          stayId={folio.id}
+          currency={folio.currency}
+          fxRate={folio.fx_rate}
+          balance={totals?.balance}
+          onClose={() => setModal(null)}
+          onDone={() => { setModal(null); load(); loadRooms(); }}
+        />
+      ) : null}
       {modal === 'charge' ? <ChargeModal stayId={folio.id} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); loadRooms(); }} /> : null}
       {modal === 'extend' ? <ExtendModal folio={folio} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} /> : null}
       {modal === 'checkout' ? (
@@ -665,6 +679,17 @@ function CheckInModal({ roomId, onClose, onDone }) {
   const [method, setMethod] = useState('Cash');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  // The currency the guest will pay in, frozen with the rate of the day.
+  const [currency, setCurrency] = useState('ETB');
+  const [rates, setRates] = useState(null);
+  const [idPhoto, setIdPhoto] = useState(null); // data URL, uploaded after check-in
+
+  useEffect(() => {
+    api
+      .get('/fx')
+      .then((data) => setRates(data))
+      .catch(() => setRates(null));
+  }, []);
 
   useEffect(() => {
     api.get('/registration-fields').then((data) => {
@@ -688,6 +713,8 @@ function CheckInModal({ roomId, onClose, onDone }) {
   if (!room) return null;
   const set = (key) => (value) => setValues((current) => ({ ...current, [key]: value }));
   const estimated = (Number(rate) || 0) * Math.max(1, Number(units) || 1);
+  const rateFor = (code) => Number(rates?.rates?.[code]) || 0;
+  const currencies = Object.keys(rates?.rates || { ETB: 1 });
 
   const submit = async () => {
     const missing = fields.filter((field) => field.required && !String(values[field.key] || '').trim());
@@ -701,11 +728,25 @@ function CheckInModal({ roomId, onClose, onDone }) {
         rate: Number(rate) || undefined,
         deposit: Number(deposit) || 0,
         method,
+        currency,
+        fxRate: currency === 'ETB' ? 1 : rateFor(currency),
         adults: Number(values.adults) || 1,
         expected_out_at: expected.toISOString(),
         note,
       });
-      toast(`${values.full_name} is checked in to Room ${room.number}. The room is now red and the bill is running.`);
+      // The identity document belongs to the guest, so it waits for the stay to exist.
+      if (idPhoto && result.guestId) {
+        try {
+          await api.post(`/guests/${result.guestId}/document`, { data_url: idPhoto });
+        } catch (error) {
+          toast(`Checked in, but the ID photo did not save: ${error.message}`, 'error');
+        }
+      }
+      toast(
+        currency === 'ETB'
+          ? `${values.full_name} is checked in to Room ${room.number}. The room is now red and the bill is running.`
+          : `${values.full_name} is checked in to Room ${room.number} — billed in ${currency} at ${rateFor(currency)} birr.`,
+      );
       loadRooms();
       onDone?.(result);
     } catch (error) {
@@ -788,27 +829,110 @@ function CheckInModal({ roomId, onClose, onDone }) {
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Allergies, VIP, late checkout…" />
         </Field>
       </div>
+
+      <h3 style={{ margin: '20px 0 10px' }}>Money &amp; identity</h3>
+      <div className="form-grid">
+        <Field
+          label="The guest will pay in"
+          hint={currency === 'ETB'
+            ? 'Birr — the normal case.'
+            : `Rate frozen now: 1 ${currency} = ${rateFor(currency)} birr. The whole bill is quoted in ${currency}.`}
+        >
+          <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
+            {currencies.map((code) => (
+              <option key={code} value={code}>{code}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Today's rates" hint={rates?.source_label || 'No rates loaded'}>
+          <div className="row">
+            <button
+              type="button"
+              className="btn"
+              onClick={async () => {
+                try {
+                  const fresh = await api.post('/fx/refresh', {});
+                  setRates((current) => ({ ...current, ...fresh }));
+                  toast(fresh.ok ? `Official rates loaded (${fresh.rates?.USD} birr per dollar).` : `Could not reach the bank — ${fresh.error}`, fresh.ok ? 'success' : 'error');
+                } catch (error) {
+                  toast(error.message, 'error');
+                }
+              }}
+            >
+              <Icon name="rotate-ccw" size={14} /> Get official rates
+            </button>
+            {currency !== 'ETB' && rateFor(currency) ? (
+              <span className="small muted">${rateFor(currency)} birr per 1 {currency}</span>
+            ) : null}
+          </div>
+        </Field>
+        <Field label="Identity document" full hint="Photograph the passport or kebele ID — it is stored with the guest, not on this device.">
+          <div className="row">
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={async (event) => {
+                const chosen = event.target.files?.[0];
+                if (!chosen) return;
+                try {
+                  setIdPhoto(await fileToDataUrl(chosen));
+                  toast('Photo ready — it is saved when you check the guest in.');
+                } catch {
+                  toast('That photo could not be read.', 'error');
+                }
+              }}
+            />
+            {idPhoto ? (
+              <>
+                <img src={idPhoto} alt="" style={{ width: 92, height: 62, objectFit: 'cover', borderRadius: 8 }} />
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIdPhoto(null)}>
+                  <Icon name="x" size={13} /> Remove
+                </button>
+              </>
+            ) : null}
+          </div>
+        </Field>
+      </div>
     </Modal>
   );
 }
 
 /* ------------------------------- payments -------------------------------- */
 
-export function PaymentModal({ stayId, onClose, onDone }) {
+export function PaymentModal({ stayId, currency = 'ETB', fxRate = 1, balance = 0, onClose, onDone }) {
   const { toast } = useApp();
+  const foreign = currency && currency !== 'ETB' && Number(fxRate) > 0;
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('Cash');
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
   const ref = useRef('');
 
+  // The guest hands over dollars; the folio still keeps birr.
+  const given = Number(amount) || 0;
+  const etb = foreign ? given * Number(fxRate) : given;
+
   const submit = async () => {
     setBusy(true);
     if (!ref.current) ref.current = clientRef('payment');
     try {
-      const result = await api.post(`/stays/${stayId}/payment`, { amount: Number(amount), method, reference, client_ref: ref.current });
+      const result = await api.post(`/stays/${stayId}/payment`, {
+        amount: etb,
+        method,
+        reference,
+        currency: foreign ? currency : undefined,
+        fxRate: foreign ? Number(fxRate) : undefined,
+        foreignAmount: foreign ? given : undefined,
+        client_ref: ref.current,
+      });
       ref.current = '';
-      toast(result.duplicate ? 'That payment was already saved.' : `${money(Number(amount))} received (${method}).`);
+      toast(
+        result.duplicate
+          ? 'That payment was already saved.'
+          : `${foreign ? `${given} ${currency} (${money(etb)})` : money(etb)} received (${method}).`,
+      );
+      onDone?.();
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -830,10 +954,26 @@ export function PaymentModal({ stayId, onClose, onDone }) {
         </>
       }
     >
+      {foreign ? (
+        <div className="banner info" style={{ marginBottom: 14 }}>
+          <Icon name="exchange" size={15} />
+          <span>
+            This guest pays in <strong>{currency}</strong> at {fxRate} birr per 1 {currency} (agreed at check-in).
+            {balance ? ` Balance: ${(Math.max(0, balance) / Number(fxRate)).toFixed(2)} ${currency}.` : ''}
+          </span>
+        </div>
+      ) : null}
       <div className="form-grid">
-        <Field label="Amount received" required>
+        <Field label={foreign ? `Amount received (${currency})` : 'Amount received'} required hint={foreign ? `= ${money(etb)} on the bill` : ''}>
           <input type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0" autoFocus />
         </Field>
+        {foreign && balance ? (
+          <Field label="Or the whole balance">
+            <button className="btn" type="button" onClick={() => setAmount(String((Math.max(0, balance) / Number(fxRate)).toFixed(2)))}>
+              {(Math.max(0, balance) / Number(fxRate)).toFixed(2)} {currency}
+            </button>
+          </Field>
+        ) : null}
         <Field label="Method">
           <select value={method} onChange={(event) => setMethod(event.target.value)}>
             {['Cash', 'Card', 'Mobile payment', 'Bank transfer', 'Corporate account'].map((option) => (
@@ -851,24 +991,73 @@ export function PaymentModal({ stayId, onClose, onDone }) {
 
 function ChargeModal({ stayId, onClose, onDone }) {
   const { toast } = useApp();
+  const [services, setServices] = useState([]);
+  const [picked, setPicked] = useState(null);
+  const [custom, setCustom] = useState(false);
   const [kind, setKind] = useState('service');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [qty, setQty] = useState(1);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.get('/services').then((data) => setServices(data.services || [])).catch(() => setServices([]));
+  }, []);
+
+  const send = async (payload) => {
+    setBusy(true);
+    try {
+      const result = await api.post(`/stays/${stayId}/service`, payload);
+      toast(`${payload.description} added — ${money(result.etb)} on the bill.`);
+      onDone?.();
+    } catch (error) {
+      toast(error.message, 'error');
+      setBusy(false);
+    }
+  };
+
+  // The service list a hotel actually charges for: laundry, taxi, minibar…
+  if (!custom) {
+    return (
+      <Modal
+        title="Post a service to the room"
+        subtitle="Tap what the guest used — it goes on the bill and to the right station."
+        onClose={onClose}
+        size="wide"
+        footer={<button className="btn" onClick={onClose}>Close</button>}
+      >
+        <div className="request-grid">
+          {services.map((service) => (
+            <button key={service.id} type="button" className="request-tile" disabled={busy} onClick={() => send({ serviceId: service.id, qty: 1 })}>
+              <Icon name={service.kind === 'other' ? 'box' : 'sparkles'} size={18} />
+              <strong>{service.name}</strong>
+              <span>{service.name_am || ''}</span>
+              <span>{service.price ? money(service.price) : 'no charge'}</span>
+            </button>
+          ))}
+        </div>
+        <button className="btn" style={{ marginTop: 14 }} onClick={() => setCustom(true)}>
+          <Icon name="pencil" size={14} /> Something else — type it in
+        </button>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
       title="Add a charge to the bill"
-      subtitle="Laundry, minibar, airport transfer, conference room — anything outside the menu."
+      subtitle="Anything outside the service list — a broken lamp, a late checkout, a special price."
       onClose={onClose}
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={() => setCustom(false)}>Back to services</button>
           <button
             className="btn btn-primary"
-            disabled={!description || !Number(amount)}
+            disabled={!description || !Number(amount) || busy}
             onClick={async () => {
               try {
-                await api.post(`/stays/${stayId}/charge`, { kind, description, amount: Number(amount) });
+                await api.post(`/stays/${stayId}/charge`, { kind, description, qty: Number(qty) || 1, amount: Number(amount) });
                 toast(`${money(Number(amount))} added to the bill.`);
                 onDone?.();
               } catch (error) {
@@ -889,7 +1078,10 @@ function ChargeModal({ stayId, onClose, onDone }) {
             <option value="food">Food &amp; drinks</option>
           </select>
         </Field>
-        <Field label="Amount" required>
+        <Field label="Quantity">
+          <input type="number" min="1" value={qty} onChange={(event) => setQty(event.target.value)} />
+        </Field>
+        <Field label="Amount (birr)" required hint="What the guest is charged">
           <input type="number" value={amount} onChange={(event) => setAmount(event.target.value)} />
         </Field>
         <Field label="Description" required full>
@@ -952,7 +1144,16 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
   const [payments, setPayments] = useState([{ amount: String(Math.max(0, totals?.balance || 0)), method: 'Cash' }]);
   const [release, setRelease] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [approval, setApproval] = useState(null); // set when the server asks for a manager
+  const [approvedBy, setApprovedBy] = useState('');
+  const [approvalId, setApprovalId] = useState('');
   const now = useNow(1000);
+
+  const currency = folio?.currency || 'ETB';
+  const foreign = currency !== 'ETB' && Number(folio?.fx_rate) > 0;
+  const rate = Number(folio?.fx_rate) || 1;
+  // The guest agreed a currency at check-in: quote the bill in it.
+  const guest = (value) => (foreign ? `${(Number(value) / rate).toFixed(2)} ${currency}` : money(value));
 
   const charge = computeRoomCharge({ ...folio, units_override: units }, now);
   const otherCharges = (totals?.food || 0) + (totals?.service || 0) + (totals?.other || 0);
@@ -968,7 +1169,18 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
       const result = await api.post(`/stays/${folio.id}/checkout`, {
         unitsOverride: Number(units),
         discount: discountValue,
-        payments: payments.filter((payment) => Number(payment.amount) > 0),
+        approval_id: approvalId || undefined,
+        payments: payments
+          .filter((payment) => Number(payment.amount) > 0)
+          .map((payment) => (foreign && payment.in_guest
+            ? {
+              amount: Number(payment.amount) * rate,
+              method: payment.method,
+              currency,
+              fxRate: rate,
+              foreignAmount: Number(payment.amount),
+            }
+            : { amount: Number(payment.amount), method: payment.method })),
         release,
         client_ref: checkoutRef.current,
       });
@@ -984,7 +1196,12 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
       await loadStays();
       onDone?.();
     } catch (error) {
-      toast(error.message, 'error');
+      if (error.status === 403 && error.payload?.needs_approval) {
+        // The hotel's rule, enforced by the server: ask a manager to approve.
+        setApproval({ message: error.message, limit: error.payload.limit });
+      } else {
+        toast(error.message, 'error');
+      }
     } finally {
       setBusy(false);
     }
@@ -1036,10 +1253,38 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
 
           <h3 style={{ margin: '18px 0 10px' }}>Discount</h3>
           <div className="form-grid">
-            <Field label="Discount / waiver" hint="Owner approvals, long stay, complaint…">
+            <Field
+              label="Discount / waiver (birr)"
+              hint={approvalId
+                ? `Approved by ${approvedBy}.`
+                : `Above ${money(approval?.limit?.amount ?? 0)} a manager has to approve it.`}
+            >
               <input type="number" value={discount} onChange={(event) => setDiscount(event.target.value)} placeholder="0" />
             </Field>
           </div>
+          {approvalId ? (
+            <div className="banner info" style={{ marginTop: 10 }}>
+              <Icon name="shield" size={14} /> <span>Approved by <strong>{approvedBy}</strong> — good for this checkout only.</span>
+            </div>
+          ) : null}
+          {approval ? (
+            <div className="card card-pad" style={{ marginTop: 10, borderColor: '#e6cfa8', background: '#fffaf1' }}>
+              <strong className="small">{approval.message}</strong>
+              <p className="tiny muted" style={{ marginTop: 6 }}>
+                The manager types their own PIN — the discount cannot be taken without it.
+              </p>
+              <ApprovalBox
+                kind="discount"
+                amount={discountValue}
+                onApproved={(result) => {
+                  setApprovalId(result.approvalId);
+                  setApprovedBy(result.approvedBy);
+                  setApproval(null);
+                  toast(`Approved by ${result.approvedBy}. Press confirm again.`);
+                }}
+              />
+            </div>
+          ) : null}
         </div>
 
         <div>
@@ -1065,9 +1310,19 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
             </div>
             <div className="bill-total due">
               <span>To collect now</span>
-              <span>{money(Math.max(0, due))}</span>
+              <span>
+                {money(Math.max(0, due))}
+                {foreign ? <div className="tiny" style={{ opacity: .85 }}>{guest(Math.max(0, due))}</div> : null}
+              </span>
             </div>
           </div>
+
+          {foreign ? (
+            <div className="banner info" style={{ marginTop: 12 }}>
+              <Icon name="exchange" size={14} />
+              <span>Guest pays in <strong>{currency}</strong> at {rate} birr — tick “in {currency}” on a payment to take it in dollars.</span>
+            </div>
+          ) : null}
 
           <h3 style={{ margin: '18px 0 10px' }}>Payment</h3>
           {payments.map((payment, index) => (
@@ -1078,6 +1333,16 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
                 onChange={(event) => setPayments(payments.map((row, i) => (i === index ? { ...row, amount: event.target.value } : row)))}
                 style={{ flex: 1, border: '1px solid var(--line-dark)', borderRadius: 10, padding: '9px 11px' }}
               />
+              {foreign ? (
+                <label className="row" style={{ gap: 6, cursor: 'pointer' }} title={`Amount is in ${currency}`}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(payment.in_guest)}
+                    onChange={(event) => setPayments(payments.map((row, i) => (i === index ? { ...row, in_guest: event.target.checked } : row)))}
+                  />
+                  <span className="small">{currency}</span>
+                </label>
+              ) : null}
               <select
                 value={payment.method}
                 onChange={(event) => setPayments(payments.map((row, i) => (i === index ? { ...row, method: event.target.value } : row)))}
@@ -1255,6 +1520,117 @@ function CleaningQueue({ rooms, onDone }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * A manager's PIN, typed by the manager, for a discount or a void.
+ * The server issues a one-shot approval; it cannot be reused.
+ */
+export function ApprovalBox({ kind, amount, detail, onApproved }) {
+  const { toast } = useApp();
+  const [username, setUsername] = useState('manager');
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div className="row" style={{ marginTop: 10, alignItems: 'flex-end' }}>
+      <Field label="Manager username">
+        <input value={username} onChange={(event) => setUsername(event.target.value)} />
+      </Field>
+      <Field label="Manager PIN">
+        <input
+          type="password"
+          value={pin}
+          onChange={(event) => setPin(event.target.value)}
+          placeholder="••••"
+          onKeyDown={async (event) => {
+            if (event.key === 'Enter') event.currentTarget.blur();
+          }}
+        />
+      </Field>
+      <button
+        className="btn btn-primary"
+        disabled={busy || !pin}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const result = await api.post('/approvals', { kind, amount, detail, managerUsername: username, managerPin: pin });
+            setPin('');
+            onApproved?.(result);
+          } catch (error) {
+            toast(error.message, 'error');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Icon name="shield" size={14} /> Approve
+      </button>
+    </div>
+  );
+}
+
+/** The guest's identity document: photograph it, look at it, or clear it. */
+export function IdDocumentCard({ guest, onUploaded }) {
+  const { toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const file = useRef(null);
+
+  const upload = async (event) => {
+    const chosen = event.target.files?.[0];
+    if (!chosen) return;
+    setBusy(true);
+    try {
+      const dataUrl = await fileToDataUrl(chosen);
+      const result = await api.post(`/guests/${guest.id}/document`, { data_url: dataUrl });
+      toast('Identity document saved on the guest file.');
+      onUploaded?.(result.url);
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setBusy(false);
+      if (file.current) file.current.value = '';
+    }
+  };
+
+  const copy = guest.id_document_url || null;
+
+  return (
+    <div className="card card-pad" style={{ marginTop: 14 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <div>
+          <h3><Icon name="id-card" size={15} /> Identity document</h3>
+          <p className="tiny muted" style={{ marginTop: 6 }}>
+            {copy
+              ? `Kept on the guest file, photographed ${relative(guest.id_document_at)} by ${guest.id_document_by || 'the desk'}.`
+              : 'Photograph the passport or ID at check-in — the police register asks for it.'}
+          </p>
+        </div>
+        <div className="row">
+          {copy ? (
+            <>
+              <button className="btn btn-sm" onClick={() => setOpen(true)}><Icon name="eye" size={13} /> Look</button>
+              <a className="btn btn-sm" href={copy} download><Icon name="download" size={13} /> Save</a>
+            </>
+          ) : null}
+          <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => file.current?.click()}>
+            <Icon name="camera" size={13} /> {busy ? 'Saving…' : copy ? 'Replace' : 'Photograph'}
+          </button>
+          <input ref={file} type="file" accept="image/*" capture="environment" hidden onChange={upload} />
+        </div>
+      </div>
+      {open && copy ? (
+        <Modal title={`${guest.full_name} · identity document`} onClose={() => setOpen(false)} footer={<button className="btn" onClick={() => setOpen(false)}>Close</button>}>
+          <img src={copy} alt="Identity document" style={{ width: '100%', borderRadius: 12 }} />
+          <p className="tiny muted" style={{ marginTop: 10 }}>
+            Opening the document is written to the audit log. Scans older than the hotel's retention rule are deleted automatically.
+          </p>
+        </Modal>
+      ) : null}
     </div>
   );
 }

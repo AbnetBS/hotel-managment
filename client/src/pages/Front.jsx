@@ -4,7 +4,7 @@ import { useApp, useNow } from '../lib/store.jsx';
 import { Icon } from '../lib/icons.jsx';
 import { money, formatElapsed, dateOf, dateTimeOf, nightsBetween } from '../lib/format.js';
 import { Stat, Empty, Card, Modal, Field, Pill, Drawer } from '../lib/ui.jsx';
-import { CheckoutModal, PaymentModal } from './Rooms.jsx';
+import { CheckoutModal, PaymentModal, IdDocumentCard } from './Rooms.jsx';
 import { computeRoomCharge } from '../../../shared/billing.js';
 
 /** What the desk can do with a booking, exactly as a real hotel works it. */
@@ -326,6 +326,9 @@ function Stays({ mode }) {
       {paymentFor ? (
         <PaymentModal
           stayId={paymentFor.id}
+          currency={paymentFor.currency}
+          fxRate={paymentFor.fx_rate}
+          balance={paymentFor.totals?.balance}
           onClose={() => setPaymentFor(null)}
           onDone={() => {
             setPaymentFor(null);
@@ -368,6 +371,17 @@ function FolioDrawer({ stayId, onClose, onChanged }) {
       title={`${stay.guest?.full_name} · Room ${stay.room_number}`}
       subtitle={`${stay.code} · ${stay.billing_mode} @ ${money(stay.rate)} · checked in ${dateTimeOf(stay.check_in_at)}`}
     >
+      {stay.currency && stay.currency !== 'ETB' && stay.fx_rate ? (
+        <div className="banner info" style={{ marginBottom: 12 }}>
+          <Icon name="exchange" size={15} />
+          <span>
+            Billed in <strong>{stay.currency}</strong> at {stay.fx_rate} birr (frozen at check-in) ·
+            total ≈ {(stay.totals.total / stay.fx_rate).toFixed(2)} {stay.currency} ·
+            balance ≈ {(stay.totals.balance / stay.fx_rate).toFixed(2)} {stay.currency}
+          </span>
+        </div>
+      ) : null}
+
       <div className="bill">
         <div className="bill-line" style={{ background: '#f8fbfa' }}>
           <div className="desc"><strong>Bill summary</strong></div>
@@ -419,6 +433,13 @@ function FolioDrawer({ stayId, onClose, onChanged }) {
         </Card>
       ) : null}
 
+      {stay.status === 'active' ? (
+        <>
+          <PostServiceCard stayId={stay.id} onPosted={async () => { await load(); await onChanged?.(); }} />
+          <IdDocumentCard guest={stay.guest} onUploaded={load} />
+        </>
+      ) : null}
+
       <div className="row">
         <button
           className="btn"
@@ -433,5 +454,59 @@ function FolioDrawer({ stayId, onClose, onChanged }) {
         <button className="btn btn-danger" onClick={onClose}>Close</button>
       </div>
     </Drawer>
+  );
+}
+
+
+/**
+ * Post a hotel service to this guest's bill in one tap — laundry, a taxi, the
+ * minibar. The list is the hotel's own, so the desk never retypes a price.
+ */
+function PostServiceCard({ stayId, onPosted }) {
+  const { toast } = useApp();
+  const [services, setServices] = useState([]);
+  const [qty, setQty] = useState(1);
+  const [busy, setBusy] = useState('');
+
+  useEffect(() => {
+    api.get('/services').then((data) => setServices(data.services || [])).catch(() => setServices([]));
+  }, []);
+
+  if (!services.length) return null;
+
+  return (
+    <Card title="Post a service to this room" subtitle="Charged to the bill straight away">
+      <div className="row" style={{ marginBottom: 10 }}>
+        <span className="small muted">Quantity</span>
+        <div className="qty">
+          <button onClick={() => setQty(Math.max(1, Number(qty) - 1))}>−</button>
+          <span>{qty}</span>
+          <button onClick={() => setQty(Number(qty) + 1)}>+</button>
+        </div>
+      </div>
+      <div className="chips">
+        {services.map((service) => (
+          <button
+            key={service.id}
+            className="chip"
+            disabled={busy === service.id}
+            onClick={async () => {
+              setBusy(service.id);
+              try {
+                const result = await api.post(`/stays/${stayId}/service`, { serviceId: service.id, qty: Number(qty) || 1 });
+                toast(`${service.name} added — ${money(result.etb)} on the bill.`);
+                onPosted?.();
+              } catch (error) {
+                toast(error.message, 'error');
+              } finally {
+                setBusy('');
+              }
+            }}
+          >
+            <Icon name="plus" size={11} /> {service.name}{service.price ? ` · ${money(service.price)}` : ''}
+          </button>
+        ))}
+      </div>
+    </Card>
   );
 }

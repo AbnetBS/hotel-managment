@@ -38,6 +38,7 @@ export function AppProvider({ children }) {
   const [stays, setStays] = useState([]);
   const [orders, setOrders] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [guestRequests, setGuestRequests] = useState([]);
   const [housekeeping, setHousekeeping] = useState([]);
   const [maintenance, setMaintenance] = useState([]);
   const [reservations, setReservations] = useState([]);
@@ -80,6 +81,8 @@ export function AppProvider({ children }) {
   }, []);
   const loadRequests = useCallback(async () => setRequests((await api.get('/checkin-requests?status=pending')).requests), []);
   const loadHousekeeping = useCallback(async () => setHousekeeping((await api.get('/housekeeping')).tasks), []);
+  // Anything a guest asked for from the room: towels, water, laundry, taxi…
+  const loadGuestRequests = useCallback(async () => setGuestRequests((await api.get('/requests?limit=120')).requests), []);
   const loadMaintenance = useCallback(async () => setMaintenance((await api.get('/maintenance')).issues), []);
   const loadReservations = useCallback(async () => setReservations((await api.get('/reservations')).reservations), []);
   const loadSnapshot = useCallback(async () => setSnapshot((await api.get('/me')).snapshot), []);
@@ -100,6 +103,7 @@ export function AppProvider({ children }) {
       setRequests(boot.checkinRequests);
       setHousekeeping(boot.housekeeping);
       setMaintenance(boot.maintenance);
+      setGuestRequests(boot.guestRequests || []);
     } catch (error) {
       if (error.status === 401) {
         clearSession();
@@ -137,6 +141,8 @@ export function AppProvider({ children }) {
       if (topics.has('checkinRequests')) loadRequests();
       if (topics.has('housekeeping')) loadHousekeeping();
       if (topics.has('maintenance')) loadMaintenance();
+      if (topics.has('requests')) loadGuestRequests();
+      if (topics.has('inventory') || topics.has('lostfound') || topics.has('branches')) loadSnapshot();
       if (topics.has('reservations')) loadReservations();
       if (topics.has('reports')) loadSnapshot();
       topics.forEach((topic) => notify(topic, true));
@@ -212,12 +218,12 @@ export function AppProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      user, settings, snapshot, rooms, roomTypes, menu, stays, orders, requests, housekeeping, maintenance, reservations,
+      user, settings, snapshot, rooms, roomTypes, menu, stays, orders, requests, guestRequests, housekeeping, maintenance, reservations,
       loading, connected, toasts, alerts,
       login, logout, toast, dismissToast, dismissAlert, subscribe, notify, loadAll, loadRooms, loadStays, loadOrders,
-      loadRequests, loadSnapshot, loadHousekeeping, loadMaintenance, loadReservations, loadMenu, loadRoomTypes,
+      loadRequests, loadSnapshot, loadHousekeeping, loadMaintenance, loadReservations, loadMenu, loadRoomTypes, loadGuestRequests,
     }),
-    [user, settings, snapshot, rooms, roomTypes, menu, stays, orders, requests, housekeeping, maintenance, reservations,
+    [user, settings, snapshot, rooms, roomTypes, menu, stays, orders, requests, guestRequests, housekeeping, maintenance, reservations,
       loading, connected, toasts, alerts, login, logout, toast, dismissToast, dismissAlert, subscribe, notify, loadAll],
   );
 

@@ -235,12 +235,64 @@ async function roomToken(number, wantFree = false) {
 /** A full QR experience: scan → pick food → send order. */
 async function guestOrdersFood() {
   const { token, number } = await roomToken('204');
-  log(`\n▶ guest in room ${number} scans the QR code and orders`);
+  log(`\n▶ guest in room ${number} scans the QR code`);
   const dom = await loadApp('guest-qr');
   dom.window.history.pushState({}, '', `/q/${token}`);
   dom.window.dispatchEvent(new dom.window.PopStateEvent('popstate'));
-  await waitFor(dom.window, (w) => /Send order|Food & drinks|not checked in|not recognised/i.test(text(w)), { label: 'guest menu' });
-  await wait(600);
+  await waitFor(dom.window, (w) => /Menu watch and order/i.test(text(w)), { label: 'guest landing' });
+  await wait(500);
+
+  // Three doors, exactly: order · ask · pay.
+  const doors = [...dom.window.document.querySelectorAll('.guest-door')];
+  const doorLabels = doors.map((door) => door.textContent.replace(/\s+/g, ' ').trim());
+  const hasThree =
+    doors.length === 3 &&
+    /Menu watch and order/i.test(doorLabels[0] || '') &&
+    /Special request/i.test(doorLabels[1] || '') &&
+    /See bill/i.test(doorLabels[2] || '');
+  log(`   · guest landing: ${doors.length} button(s) — ${doorLabels.map((label) => label.slice(0, 22)).join(' | ')}`);
+  if (!hasThree) problems.push(`[guest-qr] the guest landing is not the three agreed doors — ${doorLabels.join(' | ')}`);
+  if (!/ምናሌ|ልዩ ጥያቄ|ሂሳብ/.test(content(dom.window))) problems.push('[guest-qr] the guest landing has no Amharic labels');
+
+  /* ---- door 2: a special request, e.g. Room 204 “Please bring 2 towels” ---- */
+  doors[1]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await waitFor(dom.window, (w) => /Special request/i.test(text(w)) && w.document.querySelectorAll('.request-tile').length > 3, { label: 'request sheet', timeout: 6000 });
+  const tiles = [...dom.window.document.querySelectorAll('.request-tile')];
+  const towelTile = tiles.find((tile) => /Towel/i.test(tile.textContent));
+  towelTile?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await wait(200);
+  setValue(dom.window, dom.window.document.querySelector('textarea'), 'Please bring 2 towels');
+  await wait(150);
+  click(dom.window, 'button', 'Send request');
+  // The confirmation screen is the proof the request reached the hotel.
+  // Look at the buttons, not the page text: the inlined bundle source also
+  // contains these words, so text matching would always say yes.
+  const hasButton = (label) => [...dom.window.document.querySelectorAll('.guest button')].some((button) => new RegExp(label, 'i').test(button.textContent || ''));
+  let asked = false;
+  for (let attempt = 0; attempt < 50 && !asked; attempt += 1) {
+    asked = hasButton('Back to start') && hasButton('Ask for something else');
+    if (!asked) await wait(150);
+  }
+  log(`   · special request (${tiles.length} kinds offered): ${asked ? 'towels sent to housekeeping from the room' : 'NO CONFIRMATION'}`);
+  if (!asked) problems.push('[guest-qr] a special request from the room was not confirmed');
+
+  /* ---- door 3: the running bill ---- */
+  click(dom.window, 'button', 'Back to start');
+  await waitFor(dom.window, (w) => /Menu watch and order/i.test(text(w)), { label: 'back to the doors' });
+  const doorsAgain = [...dom.window.document.querySelectorAll('.guest-door')];
+  doorsAgain[2]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await wait(900);
+  const billText = content(dom.window);
+  const okBill = /Balance to pay|Total/i.test(billText);
+  log(`   · see bill: ${okBill ? billText.replace(/\s+/g, ' ').slice(0, 58) + '…' : 'MISSING the room charge or balance'}`);
+  if (!okBill) problems.push('[guest-qr] the bill door does not show the room charge and balance');
+
+  /* ---- door 1: watch the menu and order ---- */
+  click(dom.window, 'button', 'Back');
+  await waitFor(dom.window, (w) => /Menu watch and order/i.test(text(w)), { label: 'back to the doors' });
+  [...dom.window.document.querySelectorAll('.guest-door')][0]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await waitFor(dom.window, (w) => /Food|Everything|Send order/i.test(text(w)), { label: 'guest menu', timeout: 6000 });
+  await wait(400);
 
   const plus = [...dom.window.document.querySelectorAll('.qty button')].filter((button) => button.textContent === '+');
   if (!plus.length) {
@@ -252,23 +304,6 @@ async function guestOrdersFood() {
   const hasCart = /Send order/.test(text(dom.window));
   log(`   · menu rendered with ${plus.length} orderable items · cart bar: ${hasCart ? 'visible' : 'missing'}`);
   if (!hasCart) problems.push('[guest-qr] cart bar did not appear after adding an item');
-
-  // The guest must be able to see everything charged to the room.
-  const tabs = [...dom.window.document.querySelectorAll('.seg button')];
-  const billTab = tabs.find((button) => /bill/i.test(button.textContent));
-  const menuTab = tabs.find((button) => /food & drinks|menu/i.test(button.textContent));
-  if (billTab) {
-    billTab.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    await wait(900);
-    const billText = content(dom.window);
-    const okBill = /Room ·|Balance to pay/.test(billText);
-    log(`   · guest bill tab: ${okBill ? billText.replace(/\s+/g, ' ').slice(0, 58) + '…' : 'MISSING the room charge or balance'}`);
-    if (!okBill) problems.push('[guest-qr] the guest bill does not show the room charge and balance');
-    menuTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    await wait(700);
-  } else {
-    problems.push('[guest-qr] the guest page has no bill tab');
-  }
 
   click(dom.window, 'button', 'Send order');
   await waitFor(dom.window, (w) => /sent/i.test(text(w)) && /Order #/.test(text(w)), { label: 'order confirmation', timeout: 8000 });
@@ -493,6 +528,10 @@ async function main() {
     ['menu', /Menu & stations/],
     ['qrcodes', /Room QR codes/],
     ['formbuilder', /questions you ask every guest/i],
+    ['inventory', /Inventory/i],
+    ['lostfound', /Lost & found/],
+    ['currency', /Currency/i],
+    ['branches', /Branches/],
     ['staff', /Staff & access/],
     ['settings', /Hotel settings/],
     ['audit', /Audit log/],
@@ -501,6 +540,7 @@ async function main() {
     ['stays', /In-house guests/],
     ['folios', /Guest bills/],
     ['reservations', /Reservations/],
+    ['requests', /Guest requests/],
     ['housekeeping', /Housekeeping/],
     ['maintenance', /Maintenance/],
   ]);

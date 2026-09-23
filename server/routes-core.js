@@ -71,8 +71,17 @@ core.get('/bootstrap', requireAuth, (req, res) => {
     checkinRequests: repo.checkinRequests({ status: 'pending' }),
     housekeeping: repo.housekeeping(),
     maintenance: repo.maintenance(),
+    guestRequests: openGuestRequests(),
   });
 });
+
+/** Everything a guest asked for from their room that nobody has finished yet. */
+function openGuestRequests(limit = 80) {
+  return db
+    .prepare(`SELECT * FROM guest_requests WHERE status IN ('new', 'accepted') ORDER BY created_at DESC LIMIT ?`)
+    .all(limit)
+    .map((row) => ({ ...row, label: REQUEST_KINDS[row.kind]?.label || row.kind, am: REQUEST_KINDS[row.kind]?.am || null }));
+}
 
 /* -------------------------------- rooms ---------------------------------- */
 
@@ -146,7 +155,22 @@ core.post('/stays/:id/charge', requireAuth, requireRole('cashier', 'manager', 'a
 });
 
 core.post('/stays/:id/checkout', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  const result = actions.checkOutStay({ stayId: req.params.id, ...req.body, clientRef: req.body?.client_ref, actor: req.user });
+  const discount = Math.abs(Number(req.body?.discount) || 0);
+  // A discount over the hotel's limit has to be signed off by a manager — and the
+  // check lives here, not in the browser, so it cannot be skipped.
+  if (discount > 0 && ops.discountNeedsApproval({ amount: discount })) {
+    const approval = ops.takeApproval({ approvalId: req.body?.approval_id, kind: 'discount', on: req.params.id });
+    if (!approval) {
+      return res.status(403).json({
+        error: 'This discount is above the limit. A manager has to approve it.',
+        needs_approval: true,
+        limit: { amount: Number(allSettings().discount_limit_amount || 0), percent: Number(allSettings().discount_limit_percent || 0) },
+      });
+    }
+    req.body.approved_by = approval.approved_by;
+    req.body.approval_id = approval.id;
+  }
+  const result = actions.checkOutStay({ stayId: req.params.id, ...req.body, approvedBy: req.body?.approved_by, clientRef: req.body?.client_ref, actor: req.user });
   if (result.error) return res.status(400).json(result);
   res.json({ ...result, folio: repo.stayView(req.params.id) });
 });
@@ -666,6 +690,19 @@ core.post('/public/request/:token', (req, res) => {
   if (kind === 'other' && !note) return res.status(400).json({ error: 'Please write what you need.' });
   const result = ops.createGuestRequest({ roomId: room.id, kind, note, source: 'qr' });
   res.json({ ...result, message: 'Sent to the hotel — someone is on the way.' });
+});
+
+core.get('/public/requests/:token', (req, res) => {
+  const room = roomByToken(req.params.token);
+  if (!room) return res.status(404).json({ error: 'Unknown room.' });
+  // The guest only ever sees their own room's requests, and only what is recent.
+  const rows = db
+    .prepare(`SELECT id, kind, note, status, created_at FROM guest_requests
+              WHERE room_id = ? AND created_at > ? ORDER BY created_at DESC LIMIT 8`)
+    .all(room.id, new Date(Date.now() - 12 * 3600 * 1000).toISOString());
+  res.json({
+    requests: rows.map((row) => ({ ...row, label: REQUEST_KINDS[row.kind]?.label || row.kind, am: REQUEST_KINDS[row.kind]?.am || null })),
+  });
 });
 
 core.get('/public/rates', (req, res) => {

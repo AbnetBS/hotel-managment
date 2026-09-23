@@ -7,10 +7,23 @@ import { Stat, Empty, Card, Modal, Field, Pill } from '../lib/ui.jsx';
 
 const STATUS_LABEL = { 'in progress': 'Cleaning now', pending: 'Waiting', completed: 'Finished' };
 
+/** The maintenance ladder: reported → assigned → being fixed → fixed → signed off. */
+const FLOW = {
+  open: { next: 'assigned', label: 'Assign', icon: 'users', hint: 'Who is going to fix it?' },
+  assigned: { next: 'in progress', label: 'Start the job', icon: 'play', hint: 'The technician has started work.' },
+  'in progress': { next: 'fixed', label: 'Mark fixed', icon: 'check', hint: 'What did the repair cost?' },
+  fixed: { next: 'verified', label: 'Check and sign off', icon: 'check-circle', hint: 'You have looked at it yourself — the room goes for cleaning.' },
+  verified: null,
+  resolved: null,
+};
+const FLOW_LABEL = { open: 'Reported', assigned: 'Assigned', 'in progress': 'Being fixed', fixed: 'Fixed · waiting for check', verified: 'Verified', resolved: 'Done' };
+
 export default function Tasks({ mode }) {
   const { housekeeping, maintenance, rooms, toast, loadHousekeeping, loadMaintenance, loadRooms } = useApp();
   const [showNew, setShowNew] = useState(false);
   const [filter, setFilter] = useState('open');
+  const [moving, setMoving] = useState(null); // the ticket being moved along
+  const [history, setHistory] = useState(null); // repeat-problem history for one room
 
   const openTasks = housekeeping.filter((task) => task.status !== 'completed');
   const dirtyRooms = rooms.filter((room) => ['dirty', 'cleaning'].includes(room.status));
@@ -122,8 +135,8 @@ export default function Tasks({ mode }) {
           <div className="eyebrow">Broken things, fixed fast</div>
           <h1>Maintenance</h1>
           <p className="page-desc">
-            A high-priority problem automatically blocks the room so the desk cannot sell it. When it is fixed and the room is cleared, tap
-            <strong> Resolve</strong> — the room goes back on sale.
+            A high-priority problem blocks the room so the desk cannot sell it. Walk the ticket up the ladder —
+            <strong> assign → start → fixed → sign off</strong>. A signed-off repair sends the room for cleaning before it is sold again.
           </p>
         </div>
         <div className="row">
@@ -169,27 +182,33 @@ export default function Tasks({ mode }) {
                   <td>{issue.category}</td>
                   <td><Pill status={issue.priority}>{issue.priority}</Pill></td>
                   <td className="small muted">{relative(issue.created_at)}</td>
-                  <td><Pill status={issue.status.replace(' ', '-')}>{issue.status}</Pill></td>
+                  <td>
+                    <Pill status={issue.status.replace(' ', '-')}>{FLOW_LABEL[issue.status] || issue.status}</Pill>
+                    {issue.cost ? <div className="tiny muted">{issue.cost} birr</div> : null}
+                  </td>
                   <td style={{ textAlign: 'right' }}>
-                    {issue.status !== 'resolved' ? (
+                    <div className="row" style={{ justifyContent: 'flex-end' }}>
                       <button
-                        className="btn btn-sm btn-primary"
+                        className="icon-btn"
+                        title="Has this room had the same problem before?"
                         onClick={async () => {
                           try {
-                            await api.post(`/maintenance/${issue.id}/resolve`);
-                            toast(`Fixed — Room ${issue.room_number} is back on sale.`);
-                            loadMaintenance();
-                            loadRooms();
+                            setHistory({ room: issue.room_number, ...(await api.get(`/maintenance/history/${issue.room_id}`)) });
                           } catch (error) {
                             toast(error.message, 'error');
                           }
                         }}
                       >
-                        <Icon name="check" size={13} /> Resolve
+                        <Icon name="clock" size={14} />
                       </button>
-                    ) : (
-                      <span className="tiny muted">Closed</span>
-                    )}
+                      {FLOW[issue.status] ? (
+                        <button className="btn btn-sm btn-primary" onClick={() => setMoving(issue)}>
+                          <Icon name={FLOW[issue.status].icon} size={13} /> {FLOW[issue.status].label}
+                        </button>
+                      ) : (
+                        <span className="tiny muted">Closed</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -209,7 +228,119 @@ export default function Tasks({ mode }) {
           }}
         />
       ) : null}
+
+      {moving ? (
+        <MoveIssueModal
+          issue={moving}
+          onClose={() => setMoving(null)}
+          onDone={() => {
+            setMoving(null);
+            loadMaintenance();
+            loadRooms();
+          }}
+        />
+      ) : null}
+
+      {history ? (
+        <Modal
+          title={`Room ${history.room} · repair history`}
+          subtitle={history.repeat ? 'This room keeps coming back — worth a proper look.' : 'Nothing repeated here.'}
+          onClose={() => setHistory(null)}
+          footer={<button className="btn" onClick={() => setHistory(null)}>Close</button>}
+        >
+          <div className="stack">
+            <div className="grid grid-3">
+              <Stat label="Times reported" value={history.total} icon="wrench" foot={history.repeat ? 'Repeated problem' : 'One-off'} />
+              <Stat label="All-time repair cost" value={`${history.cost || 0}`} icon="banknote" foot="Birr spent on this room" />
+              <Stat label="Most common" value={history.top_category || '—'} icon="alert" foot="Category that keeps coming back" />
+            </div>
+            <Card title="Every ticket" subtitle="Newest first" noBody>
+              <table>
+                <thead>
+                  <tr><th>Issue</th><th>Category</th><th>Reported</th><th>Status</th><th>Cost</th></tr>
+                </thead>
+                <tbody>
+                  {history.issues.map((row) => (
+                    <tr key={row.id}>
+                      <td><strong>{row.issue}</strong></td>
+                      <td>{row.category}</td>
+                      <td className="small muted">{relative(row.created_at)}</td>
+                      <td><Pill status={String(row.status).replace(' ', '-')}>{FLOW_LABEL[row.status] || row.status}</Pill></td>
+                      <td>{row.cost ? `${row.cost} birr` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        </Modal>
+      ) : null}
     </>
+  );
+}
+
+/** One step up the maintenance ladder, with only the fields that step needs. */
+function MoveIssueModal({ issue, onClose, onDone }) {
+  const { toast } = useApp();
+  const step = FLOW[issue.status];
+  const [assignee, setAssignee] = useState(issue.assignee && issue.assignee !== 'Unassigned' ? issue.assignee : '');
+  const [cost, setCost] = useState(issue.cost || '');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/maintenance/${issue.id}/move`, {
+        status: step.next,
+        assignee: assignee || undefined,
+        cost: cost === '' ? undefined : Number(cost),
+        note: note || undefined,
+      });
+      toast(
+        step.next === 'verified'
+          ? `Signed off — Room ${issue.room_number} goes to housekeeping before it is sold again.`
+          : `Room ${issue.room_number}: ${FLOW_LABEL[step.next]}.`,
+      );
+      onDone?.();
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`${issue.issue}`}
+      subtitle={`Room ${issue.room_number} · ${FLOW_LABEL[issue.status]} → ${FLOW_LABEL[step.next]}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy} onClick={submit}>
+            <Icon name={step.icon} size={15} /> {step.label}
+          </button>
+        </>
+      }
+    >
+      <p className="small muted" style={{ marginBottom: 14 }}>{step.hint}</p>
+      <div className="form-grid">
+        {['assigned', 'in progress'].includes(step.next) ? (
+          <Field label="Handled by" full>
+            <input value={assignee} onChange={(event) => setAssignee(event.target.value)} placeholder="Technician name" />
+          </Field>
+        ) : null}
+        {step.next === 'fixed' ? (
+          <Field label="Cost of the repair (birr)" hint="Parts and labour — it is kept with the ticket." full>
+            <input type="number" min="0" value={cost} onChange={(event) => setCost(event.target.value)} placeholder="0" />
+          </Field>
+        ) : null}
+        <Field label="Note (optional)" full>
+          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="What was done?" />
+        </Field>
+      </div>
+    </Modal>
   );
 }
 

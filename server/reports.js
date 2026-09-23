@@ -83,6 +83,11 @@ export function operationsSnapshot() {
   const maintenanceOpen = db.prepare("SELECT COUNT(*) AS n FROM maintenance_issues WHERE status != 'resolved'").get().n;
   const housekeepingOpen = db.prepare("SELECT COUNT(*) AS n FROM housekeeping_tasks WHERE status != 'completed'").get().n;
   const pendingRegistrations = db.prepare("SELECT COUNT(*) AS n FROM checkin_requests WHERE status = 'pending'").get().n;
+  const requestsOpen = db.prepare("SELECT COUNT(*) AS n FROM guest_requests WHERE status != 'done'").get().n;
+  const requestsLate = db.prepare("SELECT COUNT(*) AS n FROM guest_requests WHERE status = 'new' AND created_at < ?")
+    .get(new Date(Date.now() - 15 * 60 * 1000).toISOString()).n;
+  const lostFoundStored = db.prepare("SELECT COUNT(*) AS n FROM lost_found WHERE status = 'stored'").get().n;
+  const stockLow = db.prepare('SELECT COUNT(*) AS n FROM inventory_items WHERE active = 1 AND stock <= min_stock').get().n;
 
   // Room money earned by guests who are still in house (their bill is not closed yet).
   const accruedRoomCharges = activeStays.reduce((sum, stay) => {
@@ -116,6 +121,10 @@ export function operationsSnapshot() {
     maintenanceOpen,
     housekeepingOpen,
     pendingRegistrations,
+    requestsOpen,
+    requestsLate,
+    lostFoundStored,
+    stockLow,
     adr,
     revpar: rooms.length ? Math.round(roomRevenueToday / rooms.length) : 0,
     accruedRoomCharges,

@@ -440,6 +440,8 @@ ensureColumn('housekeeping_tasks', 'branch_id', 'TEXT');
 ensureColumn('maintenance_issues', 'branch_id', 'TEXT');
 ensureColumn('inventory_items', 'branch_id', 'TEXT');
 ensureColumn('folio_items', 'branch_id', 'TEXT');
+ensureColumn('approvals', 'used_at', 'TEXT');
+ensureColumn('approvals', 'used_on', 'TEXT');
 
 // reports per branch and per day get faster with these
 db.exec(`

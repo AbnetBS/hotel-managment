@@ -22,6 +22,7 @@ import { postFolioItem, activeStayForRoom, roomById, createMaintenance } from '.
  * ========================================================================== */
 
 export const REQUEST_KINDS = {
+  food: { key: 'food', label: 'Food', am: 'ምግብ', department: 'waiter', icon: 'utensils', priced: true },
   water: { key: 'water', label: 'Water', am: 'ውሃ', department: 'housekeeping', icon: 'droplet', free: true },
   towel: { key: 'towel', label: 'Towels / linen', am: 'ፎጣ', department: 'housekeeping', icon: 'layers', free: true },
   housekeeping: { key: 'housekeeping', label: 'Clean my room', am: 'ክፍሌን ያጽዱ', department: 'housekeeping', icon: 'broom', free: true },
@@ -254,11 +255,14 @@ export function requireApproval({ kind, detail, amount, managerUsername, manager
 }
 
 /** Has this approval been granted (and not used up)? */
-export function takeApproval({ approvalId }) {
+export function takeApproval({ approvalId, kind, on }) {
   if (!approvalId) return null;
   const row = db.prepare('SELECT * FROM approvals WHERE id = ?').get(approvalId);
   if (!row) return null;
+  if (row.used_at) return null; // spent already — an approval is good for one action
   if (new Date(row.expires_at).getTime() < Date.now()) return null;
+  if (kind && row.kind !== kind) return null;
+  db.prepare('UPDATE approvals SET used_at = ?, used_on = ? WHERE id = ?').run(nowIso(), on || null, approvalId);
   return row;
 }
 

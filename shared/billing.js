@@ -190,16 +190,16 @@ export const ROLES = {
 
 /** Which staff roles are allowed where. */
 export const ROLE_NAV = {
-  admin: ['overview', 'rooms', 'roomtypes', 'menu', 'qrcodes', 'orders', 'reservations', 'stays', 'folios', 'reports', 'staff', 'formbuilder', 'housekeeping', 'maintenance', 'settings', 'audit'],
-  manager: ['overview', 'rooms', 'orders', 'reservations', 'stays', 'folios', 'reports', 'housekeeping', 'maintenance', 'audit'],
-  cashier: ['rooms', 'orders', 'stays', 'folios', 'reservations'],
-  waiter: ['deliveries'],
+  admin: ['overview', 'rooms', 'requests', 'currency', 'branches', 'roomtypes', 'menu', 'qrcodes', 'orders', 'reservations', 'stays', 'folios', 'reports', 'staff', 'formbuilder', 'housekeeping', 'maintenance', 'lostfound', 'inventory', 'settings', 'audit'],
+  manager: ['overview', 'rooms', 'requests', 'orders', 'reservations', 'stays', 'folios', 'reports', 'housekeeping', 'maintenance', 'lostfound', 'inventory', 'currency', 'audit'],
+  cashier: ['rooms', 'requests', 'orders', 'stays', 'folios', 'reservations', 'lostfound'],
+  waiter: ['requests', 'deliveries'],
   kitchen: ['station'],
   pastry: ['station'],
   barista: ['station'],
   juice: ['station'],
-  housekeeping: ['housekeeping'],
-  maintenance: ['maintenance'],
+  housekeeping: ['requests', 'housekeeping', 'lostfound'],
+  maintenance: ['requests', 'maintenance'],
 };
 
 export function canSee(role, viewId) {

@@ -18,6 +18,10 @@ const Orders = lazy(() => import('./pages/Orders.jsx'));
 const Station = lazy(() => import('./pages/Station.jsx'));
 const Deliveries = lazy(() => import('./pages/Deliveries.jsx'));
 const Tasks = lazy(() => import('./pages/Tasks.jsx'));
+const Requests = lazy(() => import('./pages/Requests.jsx'));
+const Inventory = lazy(() => import('./pages/Inventory.jsx'));
+const LostFound = lazy(() => import('./pages/LostFound.jsx'));
+const Money = lazy(() => import('./pages/Money.jsx'));
 const Insights = lazy(() => import('./pages/Insights.jsx'));
 const Front = lazy(() => import('./pages/Front.jsx'));
 const AdminProperty = lazy(() => import('./pages/AdminProperty.jsx'));
@@ -32,6 +36,11 @@ export const NAV = {
   roomtypes: { label: 'Rooms & photos', icon: 'image' },
   menu: { label: 'Menu & stations', icon: 'utensils' },
   qrcodes: { label: 'QR codes', icon: 'qr' },
+  requests: { label: 'Guest requests', icon: 'bell' },
+  inventory: { label: 'Inventory & recipes', icon: 'box' },
+  lostfound: { label: 'Lost & found', icon: 'search' },
+  currency: { label: 'Currency & rates', icon: 'exchange' },
+  branches: { label: 'Branches', icon: 'building' },
   orders: { label: 'Orders desk', icon: 'receipt' },
   reservations: { label: 'Reservations', icon: 'calendar' },
   stays: { label: 'In-house guests', icon: 'users' },
@@ -49,9 +58,9 @@ export const NAV = {
 
 const NAV_GROUPS = [
   { key: 'overview', items: ['overview', 'reports'] },
-  { key: 'front', label: 'Front desk', items: ['rooms', 'orders', 'reservations', 'stays', 'folios'] },
-  { key: 'service', label: 'Service', items: ['station', 'deliveries', 'housekeeping', 'maintenance'] },
-  { key: 'setup', label: 'Hotel setup', items: ['roomtypes', 'menu', 'qrcodes', 'formbuilder', 'staff', 'settings', 'audit'] },
+  { key: 'front', label: 'Front desk', items: ['rooms', 'requests', 'orders', 'reservations', 'stays', 'folios'] },
+  { key: 'service', label: 'Service', items: ['requests', 'station', 'deliveries', 'housekeeping', 'maintenance'] },
+  { key: 'setup', label: 'Hotel setup', items: ['roomtypes', 'menu', 'inventory', 'lostfound', 'currency', 'branches', 'qrcodes', 'formbuilder', 'staff', 'settings', 'audit'] },
 ];
 
 /** The current view + a setter, kept in step with the URL fragment. */
@@ -92,6 +101,11 @@ function Screen({ view, onNavigate }) {
     case 'orders': return <Orders />;
     case 'station': return <Station />;
     case 'deliveries': return <Deliveries />;
+    case 'requests': return <Requests />;
+    case 'inventory': return <Inventory />;
+    case 'lostfound': return <LostFound />;
+    case 'currency': return <Money mode="currency" />;
+    case 'branches': return <Money mode="branches" />;
     case 'housekeeping': return <Tasks mode="housekeeping" />;
     case 'maintenance': return <Tasks mode="maintenance" />;
     case 'reservations': return <Front mode="reservations" />;
@@ -132,6 +146,9 @@ function Shell() {
     station: 0,
     housekeeping: snapshot?.housekeepingOpen,
     maintenance: snapshot?.maintenanceOpen,
+    requests: snapshot?.requestsOpen,
+    inventory: snapshot?.stockLow,
+    lostfound: snapshot?.lostFoundStored,
   };
 
   const submitSearch = (event) => {

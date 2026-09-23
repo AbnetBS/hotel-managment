@@ -159,7 +159,7 @@ export function takePayment({ stayId, amount, method, reference, clientRef, curr
 }
 
 /** Paid & release: freeze the room charge, take the money, free the room, notify housekeeping. */
-export function checkOutStay({ stayId, unitsOverride, discount, payments = [], release = true, note, clientRef, actor }) {
+export function checkOutStay({ stayId, unitsOverride, discount, payments = [], release = true, note, clientRef, approvedBy, actor }) {
   const stay = db.prepare('SELECT * FROM stays WHERE id = ?').get(stayId);
   if (!stay) return { error: 'Stay not found.' };
   if (stay.status !== 'active') {
@@ -182,7 +182,11 @@ export function checkOutStay({ stayId, unitsOverride, discount, payments = [], r
 
   const discountValue = Math.abs(Number(discount) || 0);
   if (discountValue > 0) {
-    postFolioItem({ stayId, kind: 'discount', description: 'Discount · approved at checkout', amount: -discountValue, actor });
+    postFolioItem({
+      stayId, kind: 'discount', amount: -discountValue, actor,
+      // Who allowed it matters more than the amount when the day is closed.
+      description: `Discount · ${approvedBy ? `approved by ${approvedBy}` : 'within the desk limit'}`,
+    });
   }
 
   payments.forEach((payment, index) => {
@@ -191,7 +195,11 @@ export function checkOutStay({ stayId, unitsOverride, discount, payments = [], r
     postFolioItem({
       stayId, kind: 'payment', method: payment.method || 'Cash', reference: payment.reference, actor,
       clientRef: clientRef ? `${clientRef}:p${index}` : undefined,
-      description: `Settle bill · ${payment.method || 'Cash'}`, amount: -value,
+      currency: payment.currency && payment.currency !== 'ETB' ? payment.currency : undefined,
+      fxRate: payment.currency && payment.currency !== 'ETB' ? payment.fxRate : undefined,
+      foreignAmount: payment.currency && payment.currency !== 'ETB' ? payment.foreignAmount : undefined,
+      description: `Settle bill · ${payment.method || 'Cash'}${payment.currency && payment.currency !== 'ETB' ? ` · ${payment.foreignAmount} ${payment.currency} @ ${payment.fxRate}` : ''}`,
+      amount: -value,
     });
   });
 

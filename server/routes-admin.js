@@ -396,7 +396,12 @@ admin.post('/menu/:id/recipe', (req, res) => {
 /* -------------------------------- branches ------------------------------- */
 
 admin.get('/branches', (req, res) => {
-  res.json({ branches: db.prepare('SELECT * FROM branches ORDER BY name').all() });
+  const branches = db.prepare('SELECT * FROM branches ORDER BY name').all().map((branch) => ({
+    ...branch,
+    rooms: db.prepare('SELECT COUNT(*) AS n FROM rooms WHERE branch_id = ?').get(branch.id).n,
+    stays: db.prepare("SELECT COUNT(*) AS n FROM stays WHERE branch_id = ? AND status = 'active'").get(branch.id).n,
+  }));
+  res.json({ branches });
 });
 
 admin.post('/branches', (req, res) => {
