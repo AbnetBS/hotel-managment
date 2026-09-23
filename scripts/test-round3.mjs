@@ -202,6 +202,35 @@ check('a payment taken in dollars records both amounts', dollarPayment.status ==
 const daySummary = (await api(admin, '/admin/fx')).body.today || [];
 check('the manager sees foreign money by currency and rate', daySummary.some((row) => row.currency === 'USD'), daySummary.map((row) => `${row.currency} ${row.foreign} @ ${row.rate}`).join(' · ') || 'none yet');
 
+/* ------------------- 8b. the discount guard at checkout ------------------- */
+
+const bigDiscount = await api(cashier, `/stays/${usdCheckin.body.stayId}/checkout`, {
+  method: 'POST',
+  body: JSON.stringify({ unitsOverride: 1, discount: 4000, payments: [], release: false }),
+});
+check('a big discount cannot be taken without a manager', bigDiscount.status === 403 && bigDiscount.body.needs_approval === true,
+  bigDiscount.body.error || `status ${bigDiscount.status}`);
+
+const discountApproval = await api(cashier, '/approvals', {
+  method: 'POST',
+  body: JSON.stringify({ kind: 'discount', amount: 4000, managerUsername: 'manager', managerPin: '1234', detail: 'Goodwill' }),
+});
+const allowed = await api(cashier, `/stays/${usdCheckin.body.stayId}/checkout`, {
+  method: 'POST',
+  body: JSON.stringify({ unitsOverride: 1, discount: 4000, payments: [], release: false, approval_id: discountApproval.body.approvalId }),
+});
+check('with the manager’s approval the checkout goes through', allowed.status === 200 && allowed.body.ok === true, allowed.body.error || 'released');
+
+const reused = await api(cashier, `/stays/${usdCheckin.body.stayId}/checkout`, {
+  method: 'POST',
+  body: JSON.stringify({ unitsOverride: 1, discount: 4000, payments: [], release: false, approval_id: discountApproval.body.approvalId }),
+});
+check('the same approval cannot be used twice', reused.body.duplicate === true || reused.status === 403, `status ${reused.status}`);
+
+const folioAfter = (await api(cashier, `/stays/${usdCheckin.body.stayId}`)).body.stay;
+const discountLine = (folioAfter.items || []).find((item) => item.kind === 'discount');
+check('the folio says who allowed the discount', Boolean(discountLine) && /approved by/i.test(discountLine.description), discountLine?.description || 'no discount line');
+
 /* ------------------------------- 20. branches ----------------------------- */
 
 const branches = await api(admin, '/admin/branches');

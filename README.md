@@ -115,6 +115,19 @@ correct the number of units if the guest leaves early or stays late.
 Station prices land on the guest bill the moment an order is delivered, and every
 check-in, payment, price change and void is written to the audit log.
 
+**The guest's currency.** At check-in the desk picks what the guest will pay in (birr,
+dollar, euro, pound…). The rate of that moment is frozen on the stay, the whole bill is
+quoted in that currency, and later payments are taken in it — the dollar amount and the
+birr amount are both recorded, so the drawer adds up at the end of the shift.
+The rate card lives in **Currency & rates**: press **Get official rates** to pull the
+National Bank feed when there is internet, or type the rate by hand when there is not —
+the cached rate keeps the desk working offline either way.
+
+**A discount needs a manager.** Anything above the hotel's limit (%), set in *Hotel
+settings*, stops at the desk: a manager types their own username and PIN, the server
+issues a one-shot approval, and the folio records who allowed it. The check is on the
+server, so it cannot be skipped from the browser.
+
 ---
 
 ## QR codes
@@ -129,10 +142,58 @@ URL) before printing — that is what gets encoded into the code.
 
 ### What the guest sees on the phone
 
-Scanning the QR code in the room gives the guest three tabs: **food & drinks** (order
-straight to the kitchen), **your room** (photos, price, amenities, Wi-Fi), and
-**your bill** — the room charge for however many nights, every meal and service they
-took, what was already paid and the balance. No surprises at the desk.
+Scanning the code on the bedside table opens exactly three doors:
+
+| Door | What it does |
+| --- | --- |
+| **Menu watch and order** | the full menu with prices, order straight to the kitchen; it lands on the bill |
+| **Special request** | one tap for food, water, towels, housekeeping, laundry, room service, something broken, a taxi or “I want to check out”, plus a free note (“Please bring 2 towels”) |
+| **See bill** | everything charged to the room, what was already paid, and what is left |
+
+A request never goes to a general inbox: housekeeping, the maintenance host, the waiter
+and the desk each see only what belongs to them, and *something broken* also opens a
+maintenance ticket in the same breath. Whoever picks it up taps **Accept**, then **Done**.
+The guest sees the same list on their phone ("we are already looking after…"), so nobody
+has to call the desk to ask whether the towels are coming.
+
+Guests paying in dollars, euros or pounds see every amount in their own currency, at the
+rate that was frozen when they checked in.
+
+---
+
+## The store room works by itself
+
+**Inventory & recipes** links what leaves the shelf to what leaves the kitchen. A dish
+with a recipe (4 ingredients of Doro wat, say) takes those ingredients off stock the
+moment the station marks it done — nobody counts anything twice. The board then answers
+the two questions the store room actually has:
+
+* *what is below its minimum* — the shopping list, with a purchase request you can tick
+  off when the delivery arrives;
+* *what runs out in the next few days* — computed from the last week's real usage, not
+  from a guess.
+
+Each dish also shows its **plate cost** and margin next to the menu price, so a price can
+be argued with numbers.
+
+## When something breaks
+
+Maintenance is a ladder, not a switch: **reported → assigned → being fixed → fixed →
+signed off**. A high-priority report blocks the room so the desk cannot sell it; the
+repair carries its cost; signing it off sends the room to housekeeping to be cleaned
+before it goes back on sale. Open the clock icon on any ticket to see the room's history —
+"third time this month" is usually the real problem.
+
+## And the things that go missing
+
+The **Lost & found** register is written once, with the shelf the item sits on, and shows
+who found it and who returned it. When a guest rings three weeks later, reception answers
+in seconds instead of walking to the store room.
+
+**Identity documents** are photographed at check-in (camera or file) and kept on the guest
+file, not on the phone at the desk. Opening a document is written to the audit log, and
+scans older than the retention rule (*Hotel settings*, 90 days by default) can be purged
+in one click.
 
 ---
 
@@ -141,8 +202,9 @@ took, what was already paid and the balance. No surprises at the desk.
 ```bash
 npm run smoke          # headless walkthrough: every role, every screen, the QR order loop
 npm run test:api       # API checks: stations, cleaning flow, guest bill, double booking
+npm run test:round3    # guest requests, maintenance ladder, approvals, inventory, fx
 npm run test:security  # headers, authz, rate limits, injection, upload guards
-npm run verify         # all three, in order
+npm run verify         # all of them, in order
 ```
 
 The suites run against a live server (`npm start`) and are safe to run any time — the
@@ -158,15 +220,18 @@ client/            React app (pages, shared UI, styles)
   src/pages/       one file per screen; guest/ holds the two public QR pages
   src/lib/         api client, store (live data + toasts), icons, formatters, UI kit
 server/            Express API
-  routes-core.js   everything the floor needs (rooms, stays, orders, stations, reports)
-  routes-admin.js  admin-only: CRUD, uploads, settings, audit
+  routes-core.js   everything the floor needs (rooms, stays, orders, stations, requests)
+  routes-admin.js  admin-only: CRUD, uploads, settings, inventory, audit
   actions.js       every write: check-in/out, payments, order lifecycle, housekeeping
+  ops.js           guest requests, maintenance ladder, approvals, inventory & recipes,
+                   lost & found, identity documents
+  fx.js            the rate card: official feed, cache, manual rates, frozen guest rates
   repo.js          every read: rooms grid with live totals, folio, order, menu, users
   reports.js       revenue, occupancy, daily close, trends, guest history
   security.js      gzip, caching, security headers, rate limits, error handling
   db.js seed.js    schema + the demo dataset and migrations
 shared/billing.js  billing maths and role/nav rules used by both sides
-scripts/           the three verification suites
+scripts/           the verification suites (smoke, flows, round3, security)
 ```
 
 ---
