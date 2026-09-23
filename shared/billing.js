@@ -141,10 +141,39 @@ export const ORDER_STATUS = {
 
 export const STATIONS = {
   kitchen: { key: 'kitchen', label: 'Kitchen', am: 'ወጥ ቤት', icon: 'chef-hat' },
+  pastry: { key: 'pastry', label: 'Pastry & cake', am: 'ጣፋጭ እና ኬክ', icon: 'cake' },
   barista: { key: 'barista', label: 'Barista · bar', am: 'ባሪስታ', icon: 'coffee' },
   juice: { key: 'juice', label: 'Juice station', am: 'ጁስ ጣቢያ', icon: 'cup' },
   bar: { key: 'bar', label: 'Bar', am: 'ባር', icon: 'glass' },
 };
+
+export const STATION_ORDER = ['kitchen', 'pastry', 'barista', 'juice', 'bar'];
+
+/* ------------------------------- room status ------------------------------- */
+/**
+ * Room status follows the real housekeeping cycle:
+ *   occupied → (pay & release) → dirty → (cleaner starts) → cleaning
+ *   → (cleaner done) → inspected (optional, supervisor) → available.
+ */
+export const ROOM_STATUS = {
+  available: { key: 'available', label: 'Vacant clean', am: 'ነጻ · ንጹህ', tone: 'free', note: 'Ready for the next guest' },
+  dirty: { key: 'dirty', label: 'Needs cleaning', am: 'ማጽዳት ይፈልጋል', tone: 'clean', note: 'Guest left — housekeeping must clean it' },
+  cleaning: { key: 'cleaning', label: 'Being cleaned', am: 'በመጽዳት ላይ', tone: 'working', note: 'Housekeeping is inside right now' },
+  inspected: { key: 'inspected', label: 'Inspected', am: 'ተመርምሯል', tone: 'inspected', note: 'Checked by a supervisor — sellable' },
+  occupied: { key: 'occupied', label: 'Occupied', am: 'ተይዟል', tone: 'busy', note: 'A guest is in the room' },
+  reserved: { key: 'reserved', label: 'Reserved', am: 'ተያዝኗል', tone: 'reserved', note: 'Held for a booking' },
+  maintenance: { key: 'maintenance', label: 'Maintenance', am: 'ጥገና', tone: 'blocked', note: 'Blocked — something is broken' },
+  out_of_order: { key: 'out_of_order', label: 'Out of order', am: 'ከአገልግሎት ውጪ', tone: 'blocked', note: 'Not sellable at all' },
+};
+
+/** Rooms a guest can be checked into right now. */
+export const SELLABLE_STATUSES = ['available', 'inspected'];
+/** Rooms the desk must not sell (but which are not broken). */
+export const CLEANING_STATUSES = ['dirty', 'cleaning'];
+
+export const isSellable = (status) => SELLABLE_STATUSES.includes(status);
+export const needsCleaning = (status) => CLEANING_STATUSES.includes(status);
+export const statusLabel = (status) => ROOM_STATUS[status]?.label || String(status || '').replace(/_/g, ' ');
 
 export const ROLES = {
   admin: { key: 'admin', label: 'Owner / Admin', am: 'ባለቤት / አድሚን', home: 'overview', blurb: 'Full control: rooms, prices, staff, menu and reports.' },
@@ -152,6 +181,7 @@ export const ROLES = {
   cashier: { key: 'cashier', label: 'Cashier / Front desk', am: 'ካሸር', home: 'rooms', blurb: 'Rooms, check-in, orders, bills and payments.' },
   waiter: { key: 'waiter', label: 'Waiter', am: 'ወይተር', home: 'deliveries', blurb: 'Deliver ready orders to rooms, confirm delivery.' },
   kitchen: { key: 'kitchen', label: 'Kitchen', am: 'ወጥ ቤት', home: 'station', blurb: 'Accept and finish food tickets.' },
+  pastry: { key: 'pastry', label: 'Pastry & cake', am: 'ጣፋጭ እና ኬክ', home: 'station', blurb: 'Cakes, pastry and desserts — accept and finish tickets.' },
   barista: { key: 'barista', label: 'Barista', am: 'ባሪስታ', home: 'station', blurb: 'Coffee and bar tickets.' },
   juice: { key: 'juice', label: 'Juice station', am: 'ጁስ ጣቢያ', home: 'station', blurb: 'Juice and soft drink tickets.' },
   housekeeping: { key: 'housekeeping', label: 'Housekeeping', am: 'ጽዳት ክፍል', home: 'housekeeping', blurb: 'Clean and release rooms after checkout.' },
@@ -165,6 +195,7 @@ export const ROLE_NAV = {
   cashier: ['rooms', 'orders', 'stays', 'folios', 'reservations'],
   waiter: ['deliveries'],
   kitchen: ['station'],
+  pastry: ['station'],
   barista: ['station'],
   juice: ['station'],
   housekeeping: ['housekeeping'],

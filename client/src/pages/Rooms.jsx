@@ -9,23 +9,28 @@ import { NewOrderModal } from '../components/OrderPieces.jsx';
 
 const TILE = {
   available: 'free',
+  inspected: 'inspected',
   occupied: 'busy',
   reserved: 'reserved',
-  cleaning: 'service',
-  dirty: 'service',
+  cleaning: 'working', // blue · housekeeping is inside
+  dirty: 'needs-clean', // purple · waiting for housekeeping
   maintenance: 'blocked',
+  out_of_order: 'blocked',
 };
 
 export const STATUS_TEXT = {
   available: 'Free',
+  inspected: 'Inspected',
   occupied: 'Occupied',
   reserved: 'Reserved',
-  cleaning: 'Cleaning',
+  cleaning: 'Cleaning now',
   dirty: 'Needs cleaning',
-  maintenance: 'Blocked',
+  maintenance: 'Maintenance',
+  out_of_order: 'Out of order',
 };
 
 const shortStatus = (status) => STATUS_TEXT[status] || status;
+const CLEANING_STATUSES = ['dirty', 'cleaning'];
 
 export default function Rooms() {
   const { rooms, requests, settings, loadRooms } = useApp();
@@ -54,12 +59,14 @@ export default function Rooms() {
   }, [rooms]);
 
   const counts = useMemo(() => ({
-    free: rooms.filter((room) => room.status === 'available').length,
+    free: rooms.filter((room) => ['available', 'inspected'].includes(room.status)).length,
     busy: rooms.filter((room) => room.status === 'occupied').length,
-    service: rooms.filter((room) => ['cleaning', 'dirty'].includes(room.status)).length,
-    blocked: rooms.filter((room) => room.status === 'maintenance').length,
+    service: rooms.filter((room) => CLEANING_STATUSES.includes(room.status)).length,
+    dirty: rooms.filter((room) => room.status === 'dirty').length,
+    blocked: rooms.filter((room) => ['maintenance', 'out_of_order'].includes(room.status)).length,
     reserved: rooms.filter((room) => room.status === 'reserved').length,
   }), [rooms]);
+  const toClean = rooms.filter((room) => CLEANING_STATUSES.includes(room.status));
 
   const floors = [...new Set(rooms.map((room) => room.floor))].sort();
 
@@ -71,10 +78,10 @@ export default function Rooms() {
       if (!haystack.includes(needle)) return false;
     }
     switch (filter) {
-      case 'free': return room.status === 'available';
+      case 'free': return ['available', 'inspected'].includes(room.status);
       case 'busy': return room.status === 'occupied';
-      case 'service': return ['cleaning', 'dirty'].includes(room.status);
-      case 'blocked': return room.status === 'maintenance';
+      case 'service': return CLEANING_STATUSES.includes(room.status);
+      case 'blocked': return ['maintenance', 'out_of_order'].includes(room.status);
       case 'reserved': return room.status === 'reserved';
       default: return true;
     }
@@ -89,8 +96,10 @@ export default function Rooms() {
           <div className="eyebrow">Front desk · {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
           <h1>Room board</h1>
           <p className="page-desc">
-            <span style={{ color: 'var(--green)', fontWeight: 700 }}>Green</span> is free — tap it to show the room to a guest and check them in.{' '}
-            <span style={{ color: 'var(--red)', fontWeight: 700 }}>Red</span> is occupied — the bill is counting by itself.
+            <span style={{ color: 'var(--green)', fontWeight: 700 }}>Green</span> is free — tap it to show the room to a guest.{' '}
+            <span style={{ color: 'var(--red)', fontWeight: 700 }}>Red</span> is occupied — the bill counts by itself.{' '}
+            <span style={{ color: 'var(--purple)', fontWeight: 700 }}>Purple</span> needs cleaning — housekeeping has been told.{' '}
+            <span style={{ color: 'var(--blue)', fontWeight: 700 }}>Blue</span> is being cleaned.
           </p>
         </div>
         <div className="row">
@@ -100,7 +109,7 @@ export default function Rooms() {
           <button
             className="btn btn-primary"
             onClick={() => {
-              const free = rooms.find((room) => room.status === 'available');
+              const free = rooms.find((room) => ['available', 'inspected'].includes(room.status));
               if (free) setCheckinRoomId(free.id);
             }}
           >
@@ -109,8 +118,9 @@ export default function Rooms() {
         </div>
       </div>
 
-      <div className="grid grid-4" style={{ marginBottom: 18 }}>
+      <div className="grid grid-5" style={{ marginBottom: 18 }}>
         <Stat label="Free rooms" value={counts.free} unit={`/ ${rooms.length}`} icon="door" foot={`${counts.busy} occupied · ${counts.reserved} reserved`} />
+        <Stat label="Waiting to be cleaned" value={counts.service} icon="broom" alert={counts.dirty > 0} foot={counts.service ? `${counts.dirty} not started yet` : 'Every room is clean'} />
         <Stat label="Occupied now" value={counts.busy} icon="users" foot={`${counts.service} room(s) to clean`} alert={counts.busy > counts.free} />
         <Stat label="Awaiting registration" value={requests.length} icon="clipboard" foot={requests.length ? 'Guest filled the form from the QR code' : 'No requests waiting'} alert={requests.length > 0} />
         <Stat
@@ -120,6 +130,8 @@ export default function Rooms() {
           foot="Charged to guests still in the hotel"
         />
       </div>
+
+      {toClean.length ? <CleaningQueue rooms={toClean} onDone={loadRooms} /> : null}
 
       {requests.length ? <PendingRegistrations requests={requests} rooms={rooms} onDone={loadRooms} /> : null}
 
@@ -495,18 +507,36 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
         </div>
         <div className="card-body">
           <div className="row">
-            {['available', 'cleaning', 'dirty', 'maintenance'].map((status) => (
+            {['available', 'inspected', 'cleaning', 'dirty', 'maintenance', 'out_of_order'].map((status) => (
               <button
                 key={status}
                 className={`btn btn-sm ${room.status === status ? 'btn-soft' : ''}`}
-                disabled={!!stay && ['available', 'cleaning', 'dirty'].includes(status)}
+                disabled={!!stay && ['available', 'inspected', 'cleaning', 'dirty'].includes(status)}
                 onClick={() => setStatus(status)}
-                title={!!stay && ['available', 'cleaning', 'dirty'].includes(status) ? 'Guest is still in the room' : ''}
+                title={!!stay && ['available', 'inspected', 'cleaning', 'dirty'].includes(status) ? 'Guest is still in the room' : ''}
               >
                 {shortStatus(status)}
               </button>
             ))}
           </div>
+          {['dirty', 'cleaning'].includes(room.status) && !stay ? (
+            <button
+              className="btn btn-primary btn-block"
+              style={{ marginTop: 12 }}
+              onClick={async () => {
+                try {
+                  await api.post(`/rooms/${room.id}/cleaned`, {});
+                  toast(`Room ${room.number} is clean — green again.`);
+                  load();
+                  loadRooms();
+                } catch (error) {
+                  toast(error.message, 'error');
+                }
+              }}
+            >
+              <Icon name="sparkles" size={15} /> Cleaned · ንጹህ ሆነ
+            </button>
+          ) : null}
           {stay ? <div className="tiny muted" style={{ marginTop: 10 }}>Release the room first — “Paid &amp; release room” — before clearing it.</div> : null}
         </div>
       </div>
@@ -531,48 +561,80 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
 }
 
 function BillPanel({ folio, totals }) {
+  const items = folio?.items || [];
+  const of = (kinds) => items.filter((item) => kinds.includes(item.kind));
+  const sum = (list) => list.reduce((total, item) => total + item.amount, 0);
+  const live = folio ? computeRoomCharge(folio || {}, new Date()) : null;
+
   const groups = [
-    ['Room', folio?.items?.filter((item) => item.kind === 'room') || [], totals?.room],
-    ['Food & drinks', folio?.items?.filter((item) => item.kind === 'food') || [], null],
-    ['Services', folio?.items?.filter((item) => ['service', 'other'].includes(item.kind)) || [], null],
-    ['Discounts', folio?.items?.filter((item) => item.kind === 'discount') || [], null],
-    ['Payments', folio?.items?.filter((item) => item.kind === 'payment') || [], null],
-  ];
+    { key: 'room', label: 'Room', am: 'ክፍል', items: of(['room']) },
+    { key: 'food', label: 'Food & drinks', am: 'ምግብ እና መጠጥ', items: of(['food']) },
+    { key: 'service', label: 'Hotel services', am: 'አገልግሎቶች', items: of(['service', 'other']) },
+    { key: 'discount', label: 'Discounts', am: 'ቅናሽ', items: of(['discount']) },
+    { key: 'payment', label: 'Payments received', am: 'የተከፈለ', items: of(['payment']) },
+  ].map((group) => ({ ...group, total: sum(group.items) }));
 
   return (
     <div className="bill">
       <div className="bill-line" style={{ background: '#f8fbfa' }}>
-        <div className="desc"><strong>Guest bill · {folio?.code}</strong></div>
-        <strong>{money(totals?.total)}</strong>
+        <div className="desc"><strong>Guest bill · {folio?.code}</strong><small>Everything charged to this room</small></div>
+        <strong>{money(totals?.balance)}</strong>
       </div>
-      {totals?.room && groups[0][1].length === 0 ? (
-        <div className="bill-line">
-          <div className="desc">
-            Room charge · counting live
-            <small>{folio?.billing_mode} @ {money(folio?.rate)}</small>
-          </div>
-          <strong>{money(totals.room)}</strong>
+
+      {/* summary line the cashier reads out loud: room for N nights, food, extras */}
+      <div className="bill-summary">
+        <div>
+          <span>Room</span>
+          <strong>{money(totals?.room)}</strong>
+          <small>{live ? `${live.billedUnits} ${live.billedUnits === 1 ? live.unitLabel : live.unitLabelPlural} · ${money(folio?.rate)}` : ''}</small>
         </div>
-      ) : null}
-      {groups.map(([label, items, fallback]) =>
-        items.length ? (
-          <div key={label}>
-            {items.map((item) => (
-              <div className={`bill-line ${item.amount < 0 ? 'neg' : ''}`} key={item.id}>
-                <div className="desc">
-                  {item.description}
-                  <small>
-                    {new Date(item.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    {item.method ? ` · ${item.method}` : ''}
-                  </small>
-                </div>
-                <strong>{money(item.amount)}</strong>
-              </div>
-            ))}
+        <div>
+          <span>Food</span>
+          <strong>{money(totals?.food)}</strong>
+          <small>{of(['food']).length} line(s)</small>
+        </div>
+        <div>
+          <span>Other</span>
+          <strong>{money((totals?.service || 0) + (totals?.other || 0))}</strong>
+          <small>services &amp; extras</small>
+        </div>
+        <div>
+          <span>Paid</span>
+          <strong>{money(totals?.paid)}</strong>
+          <small>cash · card · mobile</small>
+        </div>
+      </div>
+
+      {groups.map((group) => (
+        <div key={group.key}>
+          <div className="bill-group-head">
+            <span>{group.label} <em>{group.am}</em></span>
+            <strong>{money(group.total)}</strong>
           </div>
-        ) : null,
-      )}
-      {folio?.items?.length === 0 ? <div className="bill-line"><div className="desc muted">No charges yet — the room charge is running live.</div><strong>{money(totals?.room)}</strong></div> : null}
+          {group.key === 'room' && group.items.length === 0 ? (
+            <div className="bill-line">
+              <div className="desc">
+                Room charge · counting live
+                <small>{folio?.billing_mode} @ {money(folio?.rate)}</small>
+              </div>
+              <strong>{money(totals?.room)}</strong>
+            </div>
+          ) : null}
+          {group.items.map((item) => (
+            <div className={`bill-line ${item.amount < 0 ? 'neg' : ''}`} key={item.id}>
+              <div className="desc">
+                {item.qty > 1 ? `${item.qty}× ` : ''}{item.description}
+                <small>
+                  {new Date(item.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {item.method ? ` · ${item.method}` : ''}
+                </small>
+              </div>
+              <strong>{money(item.amount)}</strong>
+            </div>
+          ))}
+        </div>
+      ))}
+
       <div className="bill-line">
         <div className="desc">Total charges</div>
         <strong>{money(totals?.total)}</strong>
@@ -1116,6 +1178,75 @@ function PendingRegistrations({ requests, rooms, onDone }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ------------------- rooms waiting for housekeeping --------------------- */
+
+function CleaningQueue({ rooms, onDone }) {
+  const { toast } = useApp();
+  const [busyId, setBusyId] = useState(null);
+
+  const clean = async (room, inspected = false) => {
+    setBusyId(room.id);
+    try {
+      await api.post(`/rooms/${room.id}/cleaned`, { inspected });
+      toast(
+        inspected
+          ? `Room ${room.number} inspected — back on sale.`
+          : `Room ${room.number} is clean — green again.`,
+      );
+      await onDone?.();
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const remind = async (room) => {
+    try {
+      await api.post(`/rooms/${room.id}/nudge-cleaning`, {});
+      toast(`Housekeeping rung again for Room ${room.number}.`, 'info');
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  };
+
+  return (
+    <div className="card clean-queue" style={{ marginBottom: 18 }}>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div className="eyebrow">Housekeeping · ጽዳት</div>
+          <strong>{rooms.length} room{rooms.length > 1 ? 's' : ''} waiting to be cleaned</strong>
+          <div className="muted" style={{ fontSize: 12 }}>
+            Tell the housekeeper the room number, then tap <strong>Cleaned</strong> here when she is done — the room goes green again.
+          </div>
+        </div>
+        <Pill status="pending">ማጽዳት ይፈልጋል</Pill>
+      </div>
+      <div className="clean-row">
+        {rooms.map((room) => (
+          <div key={room.id} className={`clean-card ${room.status === 'cleaning' ? 'working' : ''}`}>
+            <div className="clean-num">{room.number}</div>
+            <div className="clean-state">{room.status === 'cleaning' ? 'Being cleaned' : 'Needs cleaning'}</div>
+            <div className="clean-actions">
+              <button className="btn btn-sm btn-primary" disabled={busyId === room.id} onClick={() => clean(room)}>
+                <Icon name="check" size={13} /> Cleaned
+              </button>
+              {room.status === 'dirty' ? (
+                <button className="btn btn-sm" onClick={() => remind(room)} title="Ring the housekeeping board again">
+                  <Icon name="bell" size={13} /> Tell
+                </button>
+              ) : null}
+              <button className="btn btn-sm btn-ghost" disabled={busyId === room.id} onClick={() => clean(room, true)}>
+                <Icon name="shield" size={13} /> Inspected
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -38,6 +38,7 @@ The database is a single file: `server/data/clove.db`. Delete it (or run
 | Cashier / Front desk | `cashier` | room board, check-in, orders, bills, payments |
 | Waiter | `waiter` | ready orders to take to the rooms |
 | Kitchen | `kitchen` | food tickets only |
+| Pastry & cake | `pastry` | cakes, pastry and dessert tickets only |
 | Barista | `barista` | coffee & bar tickets only |
 | Juice station | `juice` | juice & soft-drink tickets only |
 | Housekeeping | `housekeeping` | rooms to turn around |
@@ -53,8 +54,12 @@ The database is a single file: `server/data/clove.db`. Delete it (or run
 4. The station taps **Accept** when it starts, **Done** when the plate leaves.
 5. When everything on the order is done, the desk gets a **Send waiter** button.
 6. The waiter delivers; **the money lands on the room bill automatically**.
-7. At checkout the cashier taps **Paid & release** — the room becomes free, housekeeping
-   gets a turnover task, and the money shows up in the admin reports.
+7. At checkout the cashier taps **Paid & release** — the room turns **purple (needs
+   cleaning)** and the cleaning alarm rings on the housekeeping board *and* at the desk
+   (most housekeepers here have no phone, so the cashier can see the room number and
+   pass it on). When the room is done, either the housekeeper taps **Cleaned** on her
+   board or the cashier taps **Cleaned** on the room — it turns **green (free)** again.
+   A supervisor can mark it **Inspected** if your hotel double-checks rooms.
 
 No smartphone? The same screen has **Phone / walk-in order** and **Check a guest in**, so
 the cashier can do all of it by hand.
@@ -70,6 +75,20 @@ the cashier can do all of it by hand.
 form: label in English and Amharic, type (text, number, phone, email, date, select,
 textarea), required or not, options, order. Add “Plate number” for hotels with parking,
 drop “Passport” if you never take foreign guests.
+
+### The room board, colour by colour
+
+| Colour | Status | Meaning |
+| --- | --- | --- |
+| 🟢 Green | Vacant clean / inspected | Free — sell it, tap it to show the guest |
+| 🔴 Red | Occupied | A guest is in, the bill is counting |
+| 🟣 Purple | Needs cleaning | Checkout done — housekeeping must clean it |
+| 🔵 Blue | Being cleaned | The cleaner has started |
+| 🟠 Amber | Reserved | Held for a booking |
+| ⚫ Grey-violet | Maintenance / out of order | Blocked — the desk cannot sell it |
+
+Nothing changes these by hand: checking a guest out turns the room purple, starting a
+clean turns it blue, finishing turns it green (or inspected).
 
 ### Money
 
@@ -101,6 +120,28 @@ Admin → *Print & stick*. Two codes per room:
 Set the *base address* to the address staff phones can reach (the LAN IP, or the public
 URL) before printing — that is what gets encoded into the code.
 
+### What the guest sees on the phone
+
+Scanning the QR code in the room gives the guest three tabs: **food & drinks** (order
+straight to the kitchen), **your room** (photos, price, amenities, Wi-Fi), and
+**your bill** — the room charge for however many nights, every meal and service they
+took, what was already paid and the balance. No surprises at the desk.
+
+---
+
+## Checking it works
+
+```bash
+npm run smoke          # headless walkthrough: every role, every screen, the QR order loop
+npm run test:api       # API checks: stations, cleaning flow, guest bill, double booking
+npm run test:security  # headers, authz, rate limits, injection, upload guards
+npm run verify         # all three, in order
+```
+
+The suites run against a live server (`npm start`) and are safe to run any time — the
+smoke test resets the demo data first, and `test:security` pauses one username for a few
+minutes on purpose (restart the API before a demo).
+
 ---
 
 ## Where things live
@@ -115,9 +156,10 @@ server/            Express API
   actions.js       every write: check-in/out, payments, order lifecycle, housekeeping
   repo.js          every read: rooms grid with live totals, folio, order, menu, users
   reports.js       revenue, occupancy, daily close, trends, guest history
-  db.js seed.js    schema + the demo dataset
+  security.js      gzip, caching, security headers, rate limits, error handling
+  db.js seed.js    schema + the demo dataset and migrations
 shared/billing.js  billing maths and role/nav rules used by both sides
-scripts/smoke.mjs  headless end-to-end check
+scripts/           the three verification suites
 ```
 
 ---

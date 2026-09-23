@@ -6,7 +6,8 @@ import { login, logout, requireAuth, requireRole, userForToken } from './auth.js
 import * as repo from './repo.js';
 import * as actions from './actions.js';
 import { operationsSnapshot, revenueSummary, dailyClose, trends, guestHistory } from './reports.js';
-import { ROLES } from '../shared/billing.js';
+import { ROLES, STATIONS, computeRoomCharge, folioTotals } from '../shared/billing.js';
+import { recordLoginFailure, clearLoginFailures } from './security.js';
 
 export const core = express.Router();
 
@@ -24,8 +25,17 @@ core.get('/auth/roles', (req, res) => {
 core.post('/auth/login', (req, res) => {
   const { username, pin } = req.body || {};
   if (!username || !pin) return res.status(400).json({ error: 'Choose your role, then enter your username and PIN.' });
-  const result = login(username, pin);
-  if (result.error) return res.status(401).json({ error: result.error });
+  const result = login(username, pin, { ip: req.ip });
+  if (result.error) {
+    const left = recordLoginFailure(req);
+    return res.status(401).json({
+      error: result.error,
+      attemptsLeft: left > 0 ? left : 0,
+      hint: left <= 3 ? `${Math.max(0, left)} attempt(s) left before this username is paused.` : undefined,
+    });
+  }
+  // A correct PIN proves it is staff, not a guesser — the counter starts again.
+  clearLoginFailures(req);
   res.json(result);
 });
 
@@ -74,6 +84,16 @@ core.post('/rooms/:id/checkin', requireAuth, requireRole('cashier', 'manager', '
 
 core.post('/rooms/:id/status', requireAuth, requireRole('cashier', 'housekeeping', 'manager', 'admin'), (req, res) => {
   fail(res, actions.setRoomStatus({ roomId: req.params.id, ...req.body, actor: req.user }));
+});
+
+/** Cleaned (cashier or housekeeper) — the room goes back to green. */
+core.post('/rooms/:id/cleaned', requireAuth, requireRole('cashier', 'housekeeping', 'manager', 'admin'), (req, res) => {
+  fail(res, actions.markRoomCleaned({ roomId: req.params.id, ...req.body, actor: req.user }));
+});
+
+/** Ring the housekeeping board again — nobody moved. */
+core.post('/rooms/:id/nudge-cleaning', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
+  fail(res, actions.nudgeCleaning({ roomId: req.params.id, actor: req.user }));
 });
 
 /* -------------------------------- stays ---------------------------------- */
@@ -195,11 +215,13 @@ core.post('/orders/:id/cancel', requireAuth, requireRole('cashier', 'manager', '
   fail(res, actions.cancelOrder({ orderId: req.params.id, reason: req.body?.reason, actor: req.user }));
 });
 
-core.post('/order-items/:id/accept', requireAuth, requireRole('kitchen', 'barista', 'juice', 'bar', 'cashier', 'manager', 'admin'), (req, res) => {
+const STATION_ROLES = ['cashier', 'manager', 'admin', ...Object.keys(STATIONS)];
+
+core.post('/order-items/:id/accept', requireAuth, requireRole(...STATION_ROLES), (req, res) => {
   fail(res, actions.acceptOrderItem({ itemId: req.params.id, actor: req.user }));
 });
 
-core.post('/order-items/:id/done', requireAuth, requireRole('kitchen', 'barista', 'juice', 'bar', 'cashier', 'manager', 'admin'), (req, res) => {
+core.post('/order-items/:id/done', requireAuth, requireRole(...STATION_ROLES), (req, res) => {
   fail(res, actions.completeOrderItem({ itemId: req.params.id, actor: req.user }));
 });
 
@@ -245,6 +267,26 @@ core.post('/reservations', requireAuth, requireRole('cashier', 'manager', 'admin
   const nights = Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / 86400000));
   const rid = `res-${Math.random().toString(36).slice(2, 8)}`;
   const code = `RES-${2400 + db.prepare('SELECT COUNT(*) AS n FROM reservations').get().n + 1}`;
+  if (room_id && arrival && departure) {
+    const clash = db.prepare(`SELECT * FROM reservations
+                              WHERE room_id = ? AND status NOT IN ('cancelled', 'no-show', 'checked-out')
+                                AND NOT (departure <= ? OR arrival >= ?)`)
+      .get(room_id, arrival, departure);
+    if (clash) {
+      const alt = db.prepare(`SELECT r.number FROM rooms r
+                              WHERE r.room_type_id = (SELECT room_type_id FROM rooms WHERE id = ?)
+                                AND r.id != ?
+                                AND COALESCE(r.status, 'available') NOT IN ('maintenance', 'out_of_order', 'occupied')
+                                AND r.id NOT IN (SELECT room_id FROM reservations
+                                                  WHERE room_id IS NOT NULL AND status NOT IN ('cancelled', 'no-show', 'checked-out')
+                                                    AND NOT (departure <= ? OR arrival >= ?))
+                              ORDER BY r.number LIMIT 3`).all(room_id, room_id, arrival, departure);
+      return res.status(409).json({
+        error: `That room is already booked for those dates (${clash.code} · ${clash.arrival} → ${clash.departure}).`,
+        alternatives: alt.map((r) => r.number),
+      });
+    }
+  }
   db.prepare(`INSERT INTO reservations (id, code, guest_name, phone, room_id, room_type_id, arrival, departure, nights, rate, source, status, deposit, note, created_at, created_by)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)`).run(
     rid, code, guest_name, phone || null, room_id || null, room_type_id || null, arrival, departure, nights,
@@ -254,13 +296,36 @@ core.post('/reservations', requireAuth, requireRole('cashier', 'manager', 'admin
   res.json({ id: rid, code, nights });
 });
 
+/** The only states a booking can be in, and how it may move. */
+const RESERVATION_FLOW = {
+  inquiry: ['tentative', 'confirmed', 'cancelled'],
+  tentative: ['confirmed', 'cancelled', 'no-show'],
+  confirmed: ['checked-in', 'cancelled', 'no-show'],
+  'checked-in': ['checked-out'],
+  'checked-out': [],
+  cancelled: [],
+  'no-show': [],
+};
+
 core.post('/reservations/:id/status', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  const { status } = req.body || {};
+  const { status, reason } = req.body || {};
   const resa = db.prepare('SELECT * FROM reservations WHERE id = ?').get(req.params.id);
   if (!resa) return res.status(404).json({ error: 'Reservation not found.' });
-  db.prepare('UPDATE reservations SET status = ? WHERE id = ?').run(status, req.params.id);
-  if (status === 'cancelled' && resa.room_id) db.prepare("UPDATE rooms SET status = 'available' WHERE id = ? AND status = 'reserved'").run(resa.room_id);
-  res.json({ ok: true });
+  if (!RESERVATION_FLOW[status]) return res.status(400).json({ error: 'Unknown booking status.' });
+  if (!(RESERVATION_FLOW[resa.status] || []).includes(status)) {
+    return res.status(409).json({ error: `A booking that is "${resa.status}" cannot become "${status}".` });
+  }
+  db.prepare('UPDATE reservations SET status = ?, note = COALESCE(?, note) WHERE id = ?')
+    .run(status, reason ? `${status}: ${reason}` : null, req.params.id);
+  if (['cancelled', 'no-show'].includes(status) && resa.room_id) {
+    db.prepare("UPDATE rooms SET status = 'available' WHERE id = ? AND status = 'reserved'").run(resa.room_id);
+  }
+  if (status === 'confirmed' && resa.room_id) {
+    db.prepare("UPDATE rooms SET status = 'reserved' WHERE id = ? AND status = 'available'").run(resa.room_id);
+  }
+  audit({ actor: req.user, action: 'reservation-status', entity: 'reservation', entityId: req.params.id, detail: `${resa.code} → ${status}${reason ? ` (${reason})` : ''}` });
+  publish(['reservations', 'rooms']);
+  res.json({ ok: true, status });
 });
 
 /* -------------------------------- reports -------------------------------- */
@@ -331,17 +396,54 @@ function guestRoomPayload(room) {
   };
 }
 
+/**
+ * The guest's own bill — everything on the folio: the room as it runs, food and
+ * drinks, other services, discounts, what is already paid and what is left.
+ * Shown on the phone, so it is grouped the way a guest reads it.
+ */
 function buildGuestBill(stay, items) {
-  const visible = items.filter((i) => ['food', 'service', 'other'].includes(i.kind));
-  const serviceChargePercent = Number(allSettings().service_charge_percent || 0);
-  const vatPercent = Number(allSettings().vat_percent || 0);
-  const charges = visible.reduce((s, i) => s + i.amount, 0);
-  const service = Math.round((charges * serviceChargePercent) / 100);
-  const vat = Math.round(((charges + service) * vatPercent) / 100);
+  const clean = items.filter((i) => !i.void);
+  const totals = folioTotals(stay, clean);
+  const lines = clean.filter((i) => !['payment', 'room', 'discount'].includes(i.kind));
+  const payments = clean.filter((i) => i.kind === 'payment');
+
+  const group = (kind, title, titleAm) => {
+    const list = lines.filter((i) => i.kind === kind);
+    if (!list.length) return null;
+    return {
+      kind, title, title_am: titleAm,
+      total: list.reduce((sum, i) => sum + i.amount, 0),
+      lines: list.map((i) => ({ id: i.id, description: i.description, qty: i.qty, amount: i.amount, at: i.created_at })),
+    };
+  };
+
+  const charge = computeRoomCharge(stay);
   return {
-    lines: visible.map((i) => ({ id: i.id, description: i.description, amount: i.amount, at: i.created_at, kind: i.kind })),
-    charges, service, vat, total: charges + service + vat,
-    note: 'Room charges are settled at the reception desk when you check out.',
+    stay: { code: stay.code, room: null, mode: stay.billing_mode, rate: stay.rate, check_in_at: stay.check_in_at },
+    room: {
+      title: 'Room', title_am: 'ክፍል',
+      units: charge.billedUnits, unit_label: charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural,
+      live: !stay.check_out_at && stay.status === 'active',
+      total: totals.room,
+      line: `${charge.billedUnits} ${charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural} × ${charge.rate}`,
+    },
+    groups: [
+      group('food', 'Food & drinks', 'ምግብ እና መጠጥ'),
+      group('service', 'Hotel services', 'የሆቴል አገልግሎቶች'),
+      group('other', 'Other charges', 'ሌሎች ክፍያዎች'),
+    ].filter(Boolean),
+    payments: payments.map((i) => ({ id: i.id, description: i.description, amount: Math.abs(i.amount), at: i.created_at })),
+    currency: allSettings().currency,
+    service_charge_percent: Number(allSettings().service_charge_percent || 0),
+    vat_percent: Number(allSettings().vat_percent || 0),
+    subtotal: totals.charges,
+    discount: Math.abs(totals.discount),
+    service: totals.service,
+    vat: totals.vat,
+    total: totals.total,
+    paid: totals.paid,
+    balance: totals.balance,
+    note: 'The desk settles the final bill when you check out. Food and services ordered in the room appear here immediately.',
   };
 }
 

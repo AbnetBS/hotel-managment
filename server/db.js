@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS rooms (
   block_reason TEXT,
   note TEXT,
   qr_token TEXT UNIQUE,
+  cleaned_at TEXT,
+  cleaned_by TEXT,
   sort INTEGER DEFAULT 0
 );
 
@@ -230,6 +232,7 @@ CREATE TABLE IF NOT EXISTS housekeeping_tasks (
   status TEXT DEFAULT 'pending',
   note TEXT,
   created_at TEXT,
+  started_at TEXT,
   completed_at TEXT
 );
 
@@ -282,6 +285,16 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_stays_status ON stays(status);
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
 `);
+
+/* ---------- tiny migrations (old databases keep working) ---------- */
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+ensureColumn('rooms', 'cleaned_at', 'TEXT');
+ensureColumn('rooms', 'cleaned_by', 'TEXT');
+ensureColumn('housekeeping_tasks', 'started_at', 'TEXT');
 
 /* ---------- small helpers ---------- */
 

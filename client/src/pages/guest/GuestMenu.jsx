@@ -209,42 +209,100 @@ export default function GuestMenu({ token }) {
         ) : null}
 
         {tab === 'bill' ? (
-          <div className="card card-pad">
-            <h2>Your bill so far</h2>
-            {!bill ? (
-              <p className="small muted" style={{ marginTop: 12 }}>No open bill for this room yet.</p>
-            ) : (
-              <>
-                <div className="bill" style={{ marginTop: 14, border: '1px solid var(--line)', borderRadius: 12 }}>
-                  {bill.lines.length === 0 ? (
-                    <div className="bill-line"><div className="desc muted">Nothing ordered yet.</div><strong>{money(0)}</strong></div>
-                  ) : (
-                    bill.lines.map((line) => (
-                      <div className="bill-line" key={line.id}>
-                        <div className="desc">{line.description}</div>
-                        <strong>{money(line.amount)}</strong>
+          <div className="stack">
+            <div className="card card-pad">
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2>Your bill · ሂሳብዎ</h2>
+                  <p className="small muted" style={{ marginTop: 6 }}>Everything charged to Room {room.number} during your stay.</p>
+                </div>
+                {bill ? <span className="pill open"><i />{bill.stay?.code}</span> : null}
+              </div>
+
+              {!bill ? (
+                <p className="small muted" style={{ marginTop: 12 }}>No open bill for this room yet.</p>
+              ) : (
+                <>
+                  <div className="bill" style={{ marginTop: 14, border: '1px solid var(--line)', borderRadius: 12 }}>
+                    <div className="bill-line">
+                      <div className="desc">
+                        <strong>Room · {bill.room.line}</strong>
+                        <small>{bill.room.live ? 'still running — updated live' : 'final room charge'}</small>
                       </div>
-                    ))
-                  )}
-                  <div className="bill-line">
-                    <div className="desc">Service charge</div>
-                    <strong>{money(bill.service)}</strong>
+                      <strong>{money(bill.room.total)}</strong>
+                    </div>
+
+                    {(bill.groups || []).map((group) => (
+                      <div key={group.kind}>
+                        <div className="bill-line" style={{ background: '#f8fbfa' }}>
+                          <div className="desc"><strong>{group.title}</strong><small>{group.title_am}</small></div>
+                          <strong>{money(group.total)}</strong>
+                        </div>
+                        {group.lines.map((line) => (
+                          <div className="bill-line" key={line.id}>
+                            <div className="desc">
+                              {line.qty > 1 ? `${line.qty}× ` : ''}{line.description}
+                              <small>{new Date(line.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
+                            </div>
+                            <strong>{money(line.amount)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    {Number(bill.discount) > 0 ? (
+                      <div className="bill-line neg">
+                        <div className="desc">Discount</div>
+                        <strong>-{money(bill.discount)}</strong>
+                      </div>
+                    ) : null}
+                    {bill.service_charge_percent ? (
+                      <div className="bill-line">
+                        <div className="desc">Service charge · {bill.service_charge_percent}%</div>
+                        <strong>{money(bill.service)}</strong>
+                      </div>
+                    ) : null}
+                    {bill.vat_percent ? (
+                      <div className="bill-line">
+                        <div className="desc">VAT · {bill.vat_percent}%</div>
+                        <strong>{money(bill.vat)}</strong>
+                      </div>
+                    ) : null}
+                    <div className="bill-total">
+                      <span>Total</span>
+                      <span>{money(bill.total)}</span>
+                    </div>
+                    {bill.paid ? (
+                      <div className="bill-line">
+                        <div className="desc">Already paid</div>
+                        <strong>-{money(bill.paid)}</strong>
+                      </div>
+                    ) : null}
+                    <div className="bill-total due">
+                      <span>Balance to pay at the desk</span>
+                      <span>{money(bill.balance)}</span>
+                    </div>
                   </div>
-                  <div className="bill-line">
-                    <div className="desc">VAT</div>
-                    <strong>{money(bill.vat)}</strong>
+
+                  {(bill.payments || []).length ? (
+                    <div className="card card-pad" style={{ marginTop: 14 }}>
+                      <h3 style={{ marginBottom: 8 }}>Payments received</h3>
+                      {bill.payments.map((payment) => (
+                        <div className="row" style={{ justifyContent: 'space-between', padding: '6px 0' }} key={payment.id}>
+                          <span className="small">{payment.description}</span>
+                          <strong className="small">{money(payment.amount)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="banner info" style={{ marginTop: 14 }}>
+                    <Icon name="receipt" size={15} />
+                    <span>{bill.note}</span>
                   </div>
-                  <div className="bill-total due">
-                    <span>Food &amp; drink total</span>
-                    <span>{money(bill.total)}</span>
-                  </div>
-                </div>
-                <div className="banner info" style={{ marginTop: 14 }}>
-                  <Icon name="receipt" size={15} />
-                  <span>{bill.note}</span>
-                </div>
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
         ) : null}
       </div>

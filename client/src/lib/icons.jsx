@@ -7,6 +7,8 @@ const paths = {
   receipt: '<path d="M6 3h12a2 2 0 0 1 2 2v16l-4-2-4 2-4-2-4 2V5a2 2 0 0 1 2-2Z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   utensils: '<path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10M17 3v18M17 3c3 2 3 6 0 8"/>',
   'chef-hat': '<path d="M6 10.5a4 4 0 1 1 2.5-7.1A4.8 4.8 0 0 1 17 5.8a3.8 3.8 0 1 1 1 7.6H6Z"/><path d="M5 14v5h14v-5M8 19v2M16 19v2"/>',
+  cake: '<path d="M4 20h16v-6c0-1.7-1.3-3-3-3H7c-1.7 0-3 1.3-3 3v6Z"/><path d="M12 11V7M12 4.5c.9 0 1.5.6 1.5 1.4 0 1-1.5 2.1-1.5 2.1s-1.5-1.1-1.5-2.1c0-.8.6-1.4 1.5-1.4Z"/><path d="M4 15.5c1.3 0 1.3 1.2 2.7 1.2s1.3-1.2 2.6-1.2 1.3 1.2 2.7 1.2 1.3-1.2 2.6-1.2 1.3 1.2 2.7 1.2 1.3-1.2 2.7-1.2"/>',
+  broom: '<path d="M14 3 9 8M6.5 10.5 13 17M4 20l4.5-1.5L20 7l-3-3-11.5 11.5L4 20Z"/>',
   sparkles: '<path d="m12 3-1.2 4.8L6 9l4.8 1.2L12 15l1.2-4.8L18 9l-4.8-1.2L12 3ZM19 14l-.7 2.3L16 17l2.3.7L19 20l.7-2.3L22 17l-2.3-.7L19 14Z"/>',
   wrench: '<path d="m14.7 6.3 3-3a5 5 0 0 0-6.4 6.4l-7.5 7.5a2 2 0 1 0 2.8 2.8l7.5-7.5a5 5 0 0 0 6.4-6.4l-3 3-2.8.2-.2-2.8Z"/>',
   chart: '<path d="M4 19V5M4 19h17M8 16v-5M12 16V7M16 16v-3M20 16V4"/>',
@@ -88,6 +90,7 @@ export const ROLE_ICON = {
   kitchen: 'chef-hat',
   barista: 'coffee',
   juice: 'cup',
+  pastry: 'cake',
   housekeeping: 'sparkles',
   maintenance: 'wrench',
 };

@@ -25,71 +25,86 @@ export default function Tasks({ mode }) {
       <>
         <div className="page-head">
           <div>
-            <div className="eyebrow">Rooms to turn around</div>
+            <div className="eyebrow">Rooms to turn around · የጽዳት ሥራ</div>
             <h1>Housekeeping</h1>
             <p className="page-desc">
-              Every checkout drops a task here automatically. Tap <strong>Start</strong>, then <strong>Finished</strong> — the moment you finish,
-              the room turns green on the cashier board and can take the next guest.
+              Rooms waiting for you are <strong>purple</strong>. Tap <strong>Start cleaning</strong> when you go in (the room turns blue), then
+              <strong> Cleaned · ንጹህ ሆነ</strong> when you finish — the room turns green for the next guest.
             </p>
           </div>
-          <button className="btn" onClick={loadHousekeeping}>
+          <button className="btn" onClick={() => { loadHousekeeping(); loadRooms(); }}>
             <Icon name="rotate-ccw" size={14} /> Refresh
           </button>
         </div>
 
         <div className="grid grid-3" style={{ marginBottom: 18 }}>
-          <Stat label="Rooms waiting" value={dirtyRooms.length} icon="door" alert={dirtyRooms.length > 0} foot="Dirty or half-cleaned" />
+          <Stat label="Rooms to clean" value={dirtyRooms.length} icon="broom" alert={dirtyRooms.length > 0} foot="Purple on the desk board" />
           <Stat label="Open tasks" value={openTasks.length} icon="sparkles" foot="Across all floors" />
           <Stat label="Finished today" value={housekeeping.filter((task) => task.status === 'completed').length} icon="check-circle" foot="Released back to the desk" />
         </div>
 
-        <Card title="Cleaning tasks" subtitle="Newest first" noBody>
-          {housekeeping.length === 0 ? (
-            <Empty title="No cleaning tasks" hint="A task appears here as soon as a guest checks out." icon="sparkles" />
+        {openTasks.length ? (
+          <div className="hk-board">
+            {openTasks.map((task) => {
+              const room = rooms.find((item) => item.id === task.room_id);
+              const started = task.status === 'in progress' || room?.status === 'cleaning';
+              return (
+                <div className={`hk-card ${started ? 'working' : ''}`} key={task.id}>
+                  <div className="hk-room">{room?.number || task.room_number}</div>
+                  <div className="hk-type">{task.type}</div>
+                  <div className="hk-note">{task.note}</div>
+                  <div className="hk-meta">
+                    <Pill status={task.priority}>{task.priority}</Pill>
+                    <span className="tiny muted">{relative(task.created_at)}</span>
+                  </div>
+                  <button
+                    className="btn btn-lg btn-primary btn-block"
+                    onClick={async () => {
+                      try {
+                        const result = await api.post(`/housekeeping/${task.id}/advance`);
+                        toast(result.status === 'completed'
+                          ? `Room ${result.room || room?.number} is clean · ክፍሉ ተጠናቋል`
+                          : `Room ${result.room || room?.number} · cleaning started`);
+                        loadHousekeeping();
+                        loadRooms();
+                      } catch (error) {
+                        toast(error.message, 'error');
+                      }
+                    }}
+                  >
+                    <Icon name={started ? 'check' : 'play'} size={18} />
+                    {started ? 'Cleaned · ንጹህ ሆነ' : 'Start cleaning · ጀምር'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <Card title="Cleaning tasks" subtitle="Nothing to do right now" noBody>
+            <Empty title="All rooms are clean" hint="A card appears here the moment a guest checks out and pays." icon="sparkles" />
+          </Card>
+        )}
+
+        <Card title="Finished today" subtitle="Kept for the supervisor" noBody>
+          {housekeeping.filter((task) => task.status === 'completed').length === 0 ? (
+            <Empty title="Nothing finished yet" hint="Completed rooms appear here with the time." icon="check-circle" />
           ) : (
             <table>
               <thead>
                 <tr>
                   <th>Room</th>
                   <th>Task</th>
-                  <th>Priority</th>
+                  <th>Finished</th>
                   <th>Note</th>
-                  <th>Age</th>
-                  <th>Status</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
-                {housekeeping.map((task) => (
+                {housekeeping.filter((task) => task.status === 'completed').map((task) => (
                   <tr key={task.id}>
                     <td><strong>Room {task.room_number}</strong></td>
                     <td>{task.type}</td>
-                    <td><Pill status={task.priority}>{task.priority}</Pill></td>
+                    <td className="small muted">{relative(task.completed_at)}</td>
                     <td className="small muted">{task.note || '—'}</td>
-                    <td className="small muted">{relative(task.created_at)}</td>
-                    <td><Pill status={task.status.replace(' ', '-')}>{STATUS_LABEL[task.status] || task.status}</Pill></td>
-                    <td style={{ textAlign: 'right' }}>
-                      {task.status !== 'completed' ? (
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={async () => {
-                            try {
-                              const result = await api.post(`/housekeeping/${task.id}/advance`);
-                              toast(result.status === 'completed' ? `Room ${task.room_number} is clean and free.` : `Room ${task.room_number} · cleaning started.`);
-                              loadHousekeeping();
-                              loadRooms();
-                            } catch (error) {
-                              toast(error.message, 'error');
-                            }
-                          }}
-                        >
-                          <Icon name={task.status === 'pending' ? 'play' : 'check'} size={13} />
-                          {task.status === 'pending' ? 'Start' : 'Finished'}
-                        </button>
-                      ) : (
-                        <span className="tiny muted">Released</span>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>

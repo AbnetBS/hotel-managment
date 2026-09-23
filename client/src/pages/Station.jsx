@@ -5,7 +5,7 @@ import { Icon } from '../lib/icons.jsx';
 import { Stat, Empty, Seg } from '../lib/ui.jsx';
 import { STATIONS } from '../../../shared/billing.js';
 
-const ROLE_STATION = { kitchen: 'kitchen', barista: 'barista', juice: 'juice' };
+const ROLE_STATION = { kitchen: 'kitchen', pastry: 'pastry', barista: 'barista', juice: 'juice' };
 
 /**
  * Kitchen / barista / juice screen. One ticket per order, only the items that

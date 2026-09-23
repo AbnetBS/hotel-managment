@@ -178,7 +178,11 @@ tbody tr:hover { background: #fafcfb; }
 .room-tile.free:after { background: var(--green); }
 .room-tile.busy:after { background: var(--red); }
 .room-tile.reserved:after { background: #d5a35c; }
-.room-tile.service:after { background: var(--blue); }
+.room-tile.service:after, .room-tile.working:after { background: var(--blue); }
+.room-tile.needs-clean:after { background: var(--purple); }
+.room-tile.needs-clean { background: linear-gradient(180deg, #fff 55%, #faf5ff); }
+.room-tile.working { background: linear-gradient(180deg, #fff 55%, #f1f7fd); }
+.room-tile.inspected:after { background: var(--teal); }
 .room-tile.blocked:after { background: var(--purple); }
 .room-tile.busy { background: linear-gradient(180deg, #fff 55%, #fdf3f1); }
 .room-tile.dim { opacity: .62; }
@@ -400,3 +404,39 @@ tbody tr:hover { background: #fafcfb; }
 @keyframes slide { from { transform: translateX(30px); opacity: .4; } }
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @keyframes ring { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+
+/* -------------------- rooms waiting for housekeeping --------------------- */
+.clean-queue { border-color: #e2d4f2; background: linear-gradient(180deg, #fff 60%, #fbf7ff); }
+.clean-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.clean-card { border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: #fff; border-left: 5px solid var(--purple); }
+.clean-card.working { border-left-color: var(--blue); }
+.clean-num { font-size: 26px; font-weight: 800; letter-spacing: -.5px; line-height: 1.1; }
+.clean-state { font-size: 11.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .6px; font-weight: 700; margin-bottom: 10px; }
+.clean-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.grid-5 { display: grid; gap: 14px; grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1180px) { .grid-5 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .grid-5 { grid-template-columns: 1fr; } }
+
+/* ------------------------ housekeeping big cards ------------------------- */
+.hk-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.hk-card { background: #fff; border: 1px solid #e2d4f2; border-top: 6px solid var(--purple); border-radius: 16px; padding: 16px; box-shadow: var(--shadow-sm); }
+.hk-card.working { border-top-color: var(--blue); }
+.hk-room { font-size: 46px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
+.hk-type { font-weight: 700; margin-top: 8px; font-size: 13.5px; }
+.hk-note { color: var(--ink-soft); font-size: 12px; margin-top: 4px; min-height: 16px; }
+.hk-meta { display: flex; align-items: center; gap: 8px; margin: 10px 0 12px; }
+
+/* -------------------------- grouped bill summary ------------------------- */
+.bill-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px; background: #f8fbfa; border-bottom: 1px solid var(--line); }
+.bill-summary > div { display: flex; flex-direction: column; gap: 2px; }
+.bill-summary span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--ink-faint); font-weight: 700; }
+.bill-summary strong { font-size: 15px; }
+.bill-summary small { color: var(--ink-faint); font-size: 11px; }
+.bill-group-head { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; background: #f2f7f5; font-size: 12px; font-weight: 700; color: var(--teal-dark); border-top: 1px solid var(--line); }
+.bill-group-head em { font-style: normal; color: var(--ink-faint); font-weight: 600; }
+@media (max-width: 700px) { .bill-summary { grid-template-columns: repeat(2, 1fr); } }
+
+/* --------------------- screen loading + shared spinner ------------------- */
+.center-load { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 80px 0; color: var(--ink-faint); }
+.spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--mint); border-top-color: var(--teal); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

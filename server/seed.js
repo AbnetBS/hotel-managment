@@ -65,6 +65,7 @@ export function seed() {
     ['u-kitchen', 'Chef Dawit Molla', 'kitchen', 'kitchen', '+251 91 662 0011'],
     ['u-barista', 'Bethlehem Alemu', 'barista', 'barista', '+251 92 553 7744'],
     ['u-juice', 'Samri Fikru', 'juice', 'juice', '+251 93 226 8899'],
+    ['u-pastry', 'Selamawit Bekele', 'pastry', 'pastry', '+251 91 229 8811'],
     ['u-housekeeping', 'Tigist Mulatu', 'housekeeping', 'housekeeping', '+251 91 445 6677'],
   ];
   const insertUser = db.prepare(`INSERT INTO users (id, name, username, pin_hash, pin_salt, role, phone, active, created_at)
@@ -174,9 +175,10 @@ export function seed() {
     ['mc-breakfast', 'Breakfast', 'ቁርስ', 'kitchen', 0],
     ['mc-mains', 'Main dishes', 'ዋና ምግብ', 'kitchen', 1],
     ['mc-snacks', 'Snacks & sides', 'መክሰስ', 'kitchen', 2],
-    ['mc-coffee', 'Coffee & hot drinks', 'ቡና', 'barista', 3],
-    ['mc-cold', 'Juice & soft drinks', 'ጁስ', 'juice', 4],
-    ['mc-bar', 'Bar', 'ባር', 'barista', 5],
+    ['mc-pastry', 'Cake & pastry', 'ኬክ እና ጣፋጭ', 'pastry', 3],
+    ['mc-coffee', 'Coffee & hot drinks', 'ቡና', 'barista', 4],
+    ['mc-cold', 'Juice & soft drinks', 'ጁስ', 'juice', 5],
+    ['mc-bar', 'Bar', 'ባር', 'barista', 6],
   ];
   const insertCat = db.prepare('INSERT INTO menu_categories (id, name, name_am, station, sort, active) VALUES (?, ?, ?, ?, ?, 1)');
   for (const c of categories) insertCat.run(...c);
@@ -198,6 +200,12 @@ export function seed() {
     ['mi-sambusa', 'Sambusa (4 pcs)', 'ሳምቡሳ', 'Crisp pastry with lentil or beef filling', 120, 'mc-snacks', 'kitchen', 12, '🥟'],
     ['mi-chips', 'Chips firfir', 'ቺፕስ ፍርፍር', 'Fries tossed with berbere and tomato', 200, 'mc-snacks', 'kitchen', 12, '🍟'],
     ['mi-fruit', 'Fruit platter', 'የፍራፍሬ ትሪ', 'Seasonal fruit, cut to order', 280, 'mc-snacks', 'kitchen', 10, '🍉'],
+    ['mi-cake-slice', 'Black Forest cake (slice)', 'ኬክ ቁራጭ', 'Chocolate sponge, cream and cherries', 220, 'mc-pastry', 'pastry', 8, '🍰'],
+    ['mi-cheesecake', 'Blueberry cheesecake', 'ቺዝ ኬክ', 'Baked cheesecake with blueberry topping', 260, 'mc-pastry', 'pastry', 8, '🍰'],
+    ['mi-birthday', 'Birthday cake (whole · 1 kg)', 'የልደት ኬክ', 'Order ahead: chocolate or vanilla, name written on top', 1450, 'mc-pastry', 'pastry', 45, '🎂'],
+    ['mi-croissant', 'Butter croissant', 'ክሮሰንት', 'Baked fresh every morning', 150, 'mc-pastry', 'pastry', 5, '🥐'],
+    ['mi-donut', 'Doughnut (2 pcs)', 'ዶናት', 'Sugar-glazed, still warm', 120, 'mc-pastry', 'pastry', 5, '🍩'],
+    ['mi-cookie', 'Cookies (4 pcs)', 'ኩኪስ', 'Butter cookies with cardamom', 100, 'mc-pastry', 'pastry', 5, '🍪'],
     ['mi-coffee', 'Ethiopian coffee', 'የኢትዮጵያ ቡና', 'Single-origin, brewed the traditional way', 120, 'mc-coffee', 'barista', 8, '☕'],
     ['mi-macchiato', 'Macchiato', 'ማኪያቶ', 'Double espresso with steamed milk', 140, 'mc-coffee', 'barista', 6, '☕'],
     ['mi-espresso', 'Espresso', 'ኤስፕሬሶ', 'Rich single shot', 110, 'mc-coffee', 'barista', 5, '☕'],

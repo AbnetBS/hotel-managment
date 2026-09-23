@@ -170,9 +170,12 @@ export function checkOutStay({ stayId, unitsOverride, discount, payments = [], r
 
   if (release && room) {
     db.prepare('UPDATE rooms SET status = ? WHERE id = ?').run('dirty', room.id);
+    const taskId = id('hk');
     db.prepare(`INSERT INTO housekeeping_tasks (id, room_id, type, assignee, priority, status, note, created_at)
                 VALUES (?, ?, 'Turnover clean · checkout', 'Unassigned', 'high', 'pending', ?, ?)`)
-      .run(id('hk'), room.id, note || `Guest left at ${new Date(checkoutAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, checkoutAt);
+      .run(taskId, room.id, note || `Guest left at ${new Date(checkoutAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, checkoutAt);
+    // The room turns purple on every board and the cleaning alarm rings.
+    ringForCleaning({ room, taskId, reason: 'checkout' });
   }
 
   const items = db.prepare('SELECT * FROM folio_items WHERE stay_id = ? AND void = 0').all(stayId);
@@ -395,14 +398,74 @@ export function setRoomStatus({ roomId, status, note, actor }) {
 export function advanceHousekeeping({ taskId, actor }) {
   const task = db.prepare('SELECT * FROM housekeeping_tasks WHERE id = ?').get(taskId);
   if (!task) return { error: 'Task not found.' };
+  const room = roomById(task.room_id);
   const next = task.status === 'pending' ? 'in progress' : 'completed';
-  db.prepare('UPDATE housekeeping_tasks SET status = ?, completed_at = ? WHERE id = ?').run(next, next === 'completed' ? nowIso() : null, taskId);
-  if (next === 'completed') {
-    const room = roomById(task.room_id);
-    if (room && ['dirty', 'cleaning'].includes(room.status)) db.prepare("UPDATE rooms SET status = 'available' WHERE id = ?").run(room.id);
+  db.prepare("UPDATE housekeeping_tasks SET status = ?, assignee = COALESCE(NULLIF(?, ''), assignee), completed_at = ?, started_at = COALESCE(started_at, ?) WHERE id = ?")
+    .run(next, actor?.name || '', next === 'completed' ? nowIso() : null, nowIso(), taskId);
+
+  if (next === 'in progress' && room && ['dirty', 'cleaning'].includes(room.status)) {
+    db.prepare("UPDATE rooms SET status = 'cleaning' WHERE id = ?").run(room.id);
+    publishToRoles(['cashier', 'manager', 'admin'], {
+      type: 'alert', kind: 'room.cleaning', room: room.number, room_id: room.id,
+      title: `Room ${room.number} — housekeeping started cleaning`, at: Date.now(),
+    });
   }
-  publish(['housekeeping', 'rooms']);
-  return { ok: true, status: next };
+  if (next === 'completed' && room && ['dirty', 'cleaning'].includes(room.status)) {
+    db.prepare("UPDATE rooms SET status = 'available' WHERE id = ?").run(room.id);
+    publishToRoles(['cashier', 'manager', 'admin'], {
+      type: 'alert', kind: 'room.clean', room: room.number, room_id: room.id,
+      title: `Room ${room.number} is clean — ready to sell`, at: Date.now(),
+    });
+  }
+  audit({ actor, action: 'housekeeping', entity: 'room', entityId: task.room_id, detail: `${task.type} → ${next}` });
+  publish(['housekeeping', 'rooms', 'reports']);
+  return { ok: true, status: next, room: room?.number };
+}
+
+/**
+ * Mark a room clean straight from the board — the cashier does this when the
+ * housekeeper has no phone and simply tells her the room is finished.
+ */
+export function markRoomCleaned({ roomId, inspected = false, note, actor }) {
+  const room = roomById(roomId);
+  if (!room) return { error: 'Room not found.' };
+  if (activeStayForRoom(roomId)) return { error: `Room ${room.number} still has a guest in it.` };
+  const status = inspected ? 'inspected' : 'available';
+  db.prepare('UPDATE rooms SET status = ?, block_reason = NULL, cleaned_at = ?, cleaned_by = ? WHERE id = ?')
+    .run(status, nowIso(), actor?.name || null, roomId);
+  db.prepare("UPDATE housekeeping_tasks SET status = 'completed', completed_at = ?, assignee = COALESCE(NULLIF(?, ''), assignee) WHERE room_id = ? AND status != 'completed'")
+    .run(nowIso(), actor?.name || '', roomId);
+  audit({ actor, action: inspected ? 'room-inspected' : 'room-cleaned', entity: 'room', entityId: roomId, detail: `${room.number} → ${status}${note ? ` (${note})` : ''}` });
+  publish(['housekeeping', 'rooms', 'reports']);
+  return { ok: true, room: room.number, status };
+}
+
+/** The cleaning alarm: purple room + a ring on the housekeeping board and the desk. */
+export function ringForCleaning({ room, taskId, reason = 'checkout' }) {
+  const payload = {
+    type: 'alert',
+    kind: 'room.needs-clean',
+    room: room?.number,
+    room_id: room?.id,
+    task_id: taskId,
+    title: `Clean Room ${room?.number} · ክፍል ${room?.number} ያጽዱ`,
+    am: 'ጽዳት ይፈልጋል',
+    reason,
+    at: Date.now(),
+  };
+  publishToRoles(['housekeeping'], payload);
+  publishToRoles(['cashier', 'manager', 'admin'], { ...payload, title: `Room ${room?.number} needs cleaning — send housekeeping` });
+  return payload;
+}
+
+/** Housekeeping can be pinged again if nobody moved (the alarm repeats). */
+export function nudgeCleaning({ roomId, actor }) {
+  const room = roomById(roomId);
+  if (!room) return { error: 'Room not found.' };
+  const task = db.prepare("SELECT * FROM housekeeping_tasks WHERE room_id = ? AND status != 'completed' ORDER BY created_at DESC").get(roomId);
+  ringForCleaning({ room, taskId: task?.id, reason: 'nudge' });
+  audit({ actor, action: 'cleaning-nudge', entity: 'room', entityId: roomId, detail: `Reminder sent for Room ${room.number}` });
+  return { ok: true };
 }
 
 export function resolveMaintenance({ issueId, actor }) {

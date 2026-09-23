@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { DB_PATH, UPLOAD_DIR, db } from './db.js';
 import { ensureSeed } from './seed.js';
 import { attachRealtime, onlineCount } from './realtime.js';
+import { compress, serveAssets, cacheHeaders, securityHeaders, rateLimit, loginGuard, errorHandler, apiNotFound } from './security.js';
 import { core } from './routes-core.js';
 import { admin } from './routes-admin.js';
 
@@ -27,19 +28,32 @@ const created = ensureSeed();
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '12mb' }));
+app.disable('etag');
+app.set('trust proxy', true); // correct client IPs behind a reverse proxy
+app.use(securityHeaders);
+app.use(compress); // gzip the app and the API replies
+app.use(express.json({ limit: '4mb' }));
+
+// Sign-in is the door everyone tries: slow brute force right down.
+app.use('/api/auth/login', loginGuard);
+// The guest QR pages are public: keep them from being hammered.
+app.use('/api/public', rateLimit({ name: 'public', windowMs: 60_000, max: 240, message: 'Too many requests from this device.' }));
+// A sane ceiling for everything else.
+app.use('/api', rateLimit({ name: 'api', windowMs: 60_000, max: 900 }));
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, online: onlineCount(), db: path.basename(DB_PATH), time: new Date().toISOString() });
 });
 
-app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }));
 app.use('/api', core);
 app.use('/api/admin', admin);
+app.use('/api', apiNotFound); // JSON, not the app shell
 
 // The built React app (and the guest QR pages) are served from the same origin.
 if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir, { index: false }));
+  app.use(serveAssets(distDir)); // hashed assets, gzipped, cached in memory
+  app.use(express.static(distDir, { index: false, setHeaders: cacheHeaders }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
     res.sendFile(path.join(distDir, 'index.html'));
@@ -56,6 +70,9 @@ if (fs.existsSync(distDir)) {
   });
 }
 
+// Anything thrown or passed to next() lands here — never a stack trace to the client.
+app.use(errorHandler);
+
 const server = http.createServer(app);
 attachRealtime(server);
 
@@ -64,7 +81,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  ─────────────────────────`);
   console.log(`  API + app      http://localhost:${PORT}`);
   console.log(`  Database       ${DB_PATH}`);
-  console.log(`  Demo logins    admin / cashier / waiter / kitchen / barista / juice  ·  PIN 1234`);
+  console.log(`  Demo logins    admin / manager / cashier / waiter / kitchen / pastry / barista / juice / housekeeping  ·  PIN 1234`);
   if (created) console.log(`  ✓ First run: demo hotel created`);
   console.log('');
 });

@@ -12,7 +12,10 @@
     "start": "node server/index.js",
     "reset-demo": "node server/seed.js --reset",
     "smoke": "node scripts/smoke.mjs",
-    "refresh-demo": "npm run build && npm run reset-demo"
+    "refresh-demo": "npm run build && npm run reset-demo",
+    "test:api": "node scripts/test-flows.mjs",
+    "test:security": "node scripts/test-security.mjs",
+    "verify": "npm run smoke && npm run test:api && npm run test:security"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

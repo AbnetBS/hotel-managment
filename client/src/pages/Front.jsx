@@ -7,6 +7,21 @@ import { Stat, Empty, Card, Modal, Field, Pill, Drawer } from '../lib/ui.jsx';
 import { CheckoutModal, PaymentModal } from './Rooms.jsx';
 import { computeRoomCharge } from '../../../shared/billing.js';
 
+/** What the desk can do with a booking, exactly as a real hotel works it. */
+const BOOKING_STEPS = {
+  inquiry: [{ status: 'tentative', label: 'Hold' }, { status: 'confirmed', label: 'Confirm', primary: true }],
+  tentative: [{ status: 'confirmed', label: 'Confirm', primary: true }, { status: 'cancelled', label: 'Cancel' }],
+  confirmed: [
+    { status: 'checked-in', label: 'Guest arrived', primary: true },
+    { status: 'no-show', label: 'No-show' },
+    { status: 'cancelled', label: 'Cancel', ask: 'Why is this booking being cancelled?' },
+  ],
+  'checked-in': [{ status: 'checked-out', label: 'Checked out' }],
+  cancelled: [],
+  'no-show': [],
+  'checked-out': [],
+};
+
 export default function Front({ mode }) {
   if (mode === 'reservations') return <Reservations />;
   return <Stays mode={mode} />;
@@ -15,7 +30,7 @@ export default function Front({ mode }) {
 /* ------------------------------ reservations ----------------------------- */
 
 function Reservations() {
-  const { rooms, roomTypes, toast, loadReservations, reservations } = useApp();
+  const { rooms, roomTypes, toast, loadReservations, reservations, loadRooms } = useApp();
   const [showNew, setShowNew] = useState(false);
 
   return (
@@ -35,6 +50,12 @@ function Reservations() {
 
       <div className="grid grid-3" style={{ marginBottom: 18 }}>
         <Stat label="Confirmed" value={reservations.filter((item) => item.status === 'confirmed').length} icon="calendar" />
+        <Stat
+          label="Expected today"
+          value={reservations.filter((item) => item.arrival?.slice(0, 10) === new Date().toISOString().slice(0, 10) && ['confirmed', 'tentative'].includes(item.status)).length}
+          icon="user-plus"
+          foot="Arrivals still to come"
+        />
         <Stat label="Waiting for confirmation" value={reservations.filter((item) => item.status === 'pending').length} icon="clock" alert={reservations.some((item) => item.status === 'pending')} />
         <Stat
           label="Deposits held"
@@ -74,18 +95,26 @@ function Reservations() {
                   <td className="small muted">{resa.source}</td>
                   <td><Pill status={resa.status}>{resa.status}</Pill></td>
                   <td style={{ textAlign: 'right' }}>
-                    {resa.status !== 'cancelled' ? (
-                      <button
-                        className="btn btn-sm"
-                        onClick={async () => {
-                          await api.post(`/reservations/${resa.id}/status`, { status: 'cancelled' });
-                          toast(`${resa.guest_name}'s booking was cancelled.`, 'info');
-                          loadReservations();
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    ) : null}
+                    <div className="row" style={{ justifyContent: 'flex-end' }}>
+                      {(BOOKING_STEPS[resa.status] || []).map((step) => (
+                        <button
+                          key={step.status}
+                          className={`btn btn-sm ${step.primary ? 'btn-primary' : ''}`}
+                          onClick={async () => {
+                            try {
+                              await api.post(`/reservations/${resa.id}/status`, { status: step.status, reason: step.ask ? window.prompt(step.ask) || undefined : undefined });
+                              toast(`${resa.guest_name}: ${step.status}.`, step.status === 'cancelled' || step.status === 'no-show' ? 'info' : 'success');
+                              loadReservations();
+                              loadRooms?.();
+                            } catch (error) {
+                              toast(error.message, 'error');
+                            }
+                          }}
+                        >
+                          {step.label}
+                        </button>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}

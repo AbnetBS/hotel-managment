@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { AppProvider, useApp } from './lib/store.jsx';
 import { Toasts } from './lib/ui.jsx';
 import { Icon, ROLE_ICON } from './lib/icons.jsx';
@@ -6,20 +6,25 @@ import { canSee, ROLES } from '../../shared/billing.js';
 import { dayShort } from './lib/format.js';
 
 import Login from './pages/Login.jsx';
-import Rooms from './pages/Rooms.jsx';
-import Orders from './pages/Orders.jsx';
-import Station from './pages/Station.jsx';
-import Deliveries from './pages/Deliveries.jsx';
-import Tasks from './pages/Tasks.jsx';
-import Insights from './pages/Insights.jsx';
-import Front from './pages/Front.jsx';
-import AdminProperty from './pages/AdminProperty.jsx';
-import AdminMenu from './pages/AdminMenu.jsx';
-import AdminTeam from './pages/AdminTeam.jsx';
-import AdminSystem from './pages/AdminSystem.jsx';
+// Guest pages stay in the first download — a guest standing at the door should
+// never wait for a second round-trip over hotel Wi-Fi.
 import GuestMenu from './pages/guest/GuestMenu.jsx';
 import GuestRegister from './pages/guest/GuestRegister.jsx';
-import NewOrderAlert from './components/NewOrderAlert.jsx';
+
+// Staff screens load on first visit (each one becomes its own small chunk, so
+// the cashier never downloads the admin tools and the first screen paints fast).
+const Rooms = lazy(() => import('./pages/Rooms.jsx'));
+const Orders = lazy(() => import('./pages/Orders.jsx'));
+const Station = lazy(() => import('./pages/Station.jsx'));
+const Deliveries = lazy(() => import('./pages/Deliveries.jsx'));
+const Tasks = lazy(() => import('./pages/Tasks.jsx'));
+const Insights = lazy(() => import('./pages/Insights.jsx'));
+const Front = lazy(() => import('./pages/Front.jsx'));
+const AdminProperty = lazy(() => import('./pages/AdminProperty.jsx'));
+const AdminMenu = lazy(() => import('./pages/AdminMenu.jsx'));
+const AdminTeam = lazy(() => import('./pages/AdminTeam.jsx'));
+const AdminSystem = lazy(() => import('./pages/AdminSystem.jsx'));
+const NewOrderAlert = lazy(() => import('./components/NewOrderAlert.jsx'));
 
 export const NAV = {
   overview: { label: 'Overview', icon: 'grid' },
@@ -68,6 +73,15 @@ function useRoute() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   return path;
+}
+
+function ScreenLoading() {
+  return (
+    <div className="center-load">
+      <span className="spinner" />
+      <span className="muted small">Opening…</span>
+    </div>
+  );
 }
 
 function Screen({ view, onNavigate }) {
@@ -209,10 +223,14 @@ function Shell() {
           </div>
         </header>
         <main className="content">
-          <Screen view={view} onNavigate={go} />
+          <Suspense fallback={<ScreenLoading />}>
+            <Screen view={view} onNavigate={go} />
+          </Suspense>
         </main>
       </div>
-      <NewOrderAlert onOpenOrders={() => go('orders')} />
+      <Suspense fallback={null}>
+        <NewOrderAlert onOpenOrders={() => go('orders')} />
+      </Suspense>
       <Toasts />
     </div>
   );

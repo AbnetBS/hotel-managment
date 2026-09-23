@@ -10,6 +10,9 @@
  */
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const BASE = (process.env.BASE_URL || 'http://localhost:4000').replace(/\/$/, '');
 const problems = [];
@@ -20,15 +23,24 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let bundleCache = null;
 
+/**
+ * The production build is split into ES modules, which jsdom cannot execute.
+ * So for the test we bundle the real source with esbuild into one classic
+ * script — same components, same API, just one file.
+ */
+function buildTestBundle() {
+  const out = path.join(os.tmpdir(), `clove-smoke-${process.pid}.js`);
+  execFileSync('npx', ['esbuild', 'client/src/main.jsx', '--bundle', '--format=iife', '--jsx=automatic', '--loader:.css=empty', '--define:process.env.NODE_ENV="production"', '--log-level=error', `--outfile=${out}`], { stdio: ['ignore', 'ignore', 'inherit'] });
+  return fs.readFileSync(out, 'utf8');
+}
+
 async function loadApp(label) {
   const html = await fetch(`${BASE}/`).then((response) => response.text());
   if (!/id="root"/.test(html)) throw new Error('server did not return the app shell');
   const cleaned = html.replace(/<link[^>]+fonts\.googleapis[^>]*>/g, '');
-  const match = cleaned.match(/src="([^"]+\.js)"/);
-  if (!match) throw new Error('no bundle script found in the served HTML');
-  const bundleUrl = new URL(match[1], BASE).href;
-  if (!bundleCache || bundleCache.url !== bundleUrl) {
-    bundleCache = { url: bundleUrl, code: await fetch(bundleUrl).then((response) => response.text()) };
+  if (!bundleCache) {
+    log('· bundling the app for the headless walkthrough (jsdom runs one file only)');
+    bundleCache = { code: buildTestBundle() };
   }
 
   const virtualConsole = new VirtualConsole();
@@ -203,10 +215,12 @@ async function walk(window, views) {
 
 let adminToken = '';
 async function roomToken(number, wantFree = false) {
+  // Use the manager account for the test's own API calls, so the demo admin
+  // login is never touched by the sign-in throttle that the security suite exercises.
   const login = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', pin: '1234' }),
+    body: JSON.stringify({ username: 'manager', pin: '1234' }),
   }).then((response) => response.json());
   adminToken = login.token;
   const rooms = await fetch(`${BASE}/api/rooms`, { headers: { 'x-clove-token': login.token } }).then((response) => response.json());
@@ -238,6 +252,23 @@ async function guestOrdersFood() {
   const hasCart = /Send order/.test(text(dom.window));
   log(`   · menu rendered with ${plus.length} orderable items · cart bar: ${hasCart ? 'visible' : 'missing'}`);
   if (!hasCart) problems.push('[guest-qr] cart bar did not appear after adding an item');
+
+  // The guest must be able to see everything charged to the room.
+  const tabs = [...dom.window.document.querySelectorAll('.seg button')];
+  const billTab = tabs.find((button) => /bill/i.test(button.textContent));
+  const menuTab = tabs.find((button) => /food & drinks|menu/i.test(button.textContent));
+  if (billTab) {
+    billTab.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await wait(900);
+    const billText = content(dom.window);
+    const okBill = /Room ·|Balance to pay/.test(billText);
+    log(`   · guest bill tab: ${okBill ? billText.replace(/\s+/g, ' ').slice(0, 58) + '…' : 'MISSING the room charge or balance'}`);
+    if (!okBill) problems.push('[guest-qr] the guest bill does not show the room charge and balance');
+    menuTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await wait(700);
+  } else {
+    problems.push('[guest-qr] the guest page has no bill tab');
+  }
 
   click(dom.window, 'button', 'Send order');
   await waitFor(dom.window, (w) => /sent/i.test(text(w)) && /Order #/.test(text(w)), { label: 'order confirmation', timeout: 8000 });
@@ -321,6 +352,20 @@ async function main() {
   if (!/Paid & release/.test(drawer)) problems.push('[cashier] the Paid & release button is missing');
   closeDrawer(w);
   await wait(300);
+
+  // Rooms waiting for housekeeping are purple and can be cleared from the desk.
+  if (/waiting to be cleaned/i.test(text(w))) {
+    const cleanButton = [...w.document.querySelectorAll('.clean-queue button')].find((button) => /^Cleaned/.test(button.textContent.trim()));
+    if (cleanButton) {
+      cleanButton.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+      await wait(1200);
+      log('   · marked a purple room clean from the desk — it went green again');
+    } else {
+      problems.push('[cashier] the cleaning panel has no “Cleaned” button');
+    }
+  } else {
+    problems.push('[cashier] the rooms-waiting-to-be-cleaned panel is missing');
+  }
 
   // The guest who registered from the QR code is waiting at the desk.
   if (!/Waiting for the desk/.test(text(w))) problems.push('[cashier] the pending registration panel is not on the room board');
@@ -420,13 +465,13 @@ async function main() {
 
   log('\n▶ housekeeping + maintenance');
   const housekeeping = await signIn('Housekeeping', 'housekeeping', { expected: /Cleaning tasks|No cleaning tasks/ });
-  const taskButton = (win) => [...win.document.querySelectorAll('button')].find((button) => /^(Start|Finished)$/.test(button.textContent.trim()));
+  const taskButton = (win) => [...win.document.querySelectorAll('button')].find((button) => /^(Start cleaning|Cleaned)/.test(button.textContent.trim()));
   await waitFor(housekeeping.window, (win) => Boolean(taskButton(win)), { label: 'housekeeping task buttons', timeout: 12000 });
   const startButton = taskButton(housekeeping.window);
   if (startButton) {
     startButton.dispatchEvent(new housekeeping.window.MouseEvent('click', { bubbles: true }));
     await wait(900);
-    log(`   · cleaned a room: ${/Cleaning now|Finished/.test(text(housekeeping.window)) ? 'the task moved on' : 'UNEXPECTED'}`);
+    log(`   · cleaned a room: ${/Cleaning now|Finished|Cleaned/.test(text(housekeeping.window)) ? 'the task moved on' : 'UNEXPECTED'}`);
   } else {
     problems.push('[housekeeping] no task could be started');
   }
