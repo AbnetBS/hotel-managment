@@ -8,6 +8,9 @@ import { hashPin, randomToken } from './password.js';
 import * as repo from './repo.js';
 import { publish } from './realtime.js';
 import { loginPauses, clearLoginPauses } from './security.js';
+import { rateCard, saveRates, currencySummary } from './fx.js';
+import * as ops from './ops.js';
+import { consumeRecipe, adjustStock, setRecipe, menuItemCost } from './ops.js';
 
 export const admin = express.Router();
 
@@ -296,6 +299,115 @@ admin.patch('/settings', (req, res) => {
   audit({ actor: req.user, action: 'settings-update', entity: 'settings', detail: Object.keys(b).join(', ') });
   publish(['settings']);
   res.json({ settings: allSettings() });
+});
+
+/* ------------------------------- currency -------------------------------- */
+
+admin.get('/fx', (req, res) => {
+  const card = rateCard();
+  const today = new Date().toISOString().slice(0, 10);
+  res.json({ ...card, today: currencySummary({ from: today, to: today }) });
+});
+
+admin.post('/fx/rates', (req, res) => {
+  const result = saveRates({ rates: req.body?.rates || {}, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(rateCard());
+});
+
+/* ------------------------------- inventory ------------------------------- */
+
+admin.get('/inventory', (req, res) => {
+  res.json({
+    items: ops.stockForecast(),
+    requests: db.prepare("SELECT * FROM purchase_requests WHERE status = 'open' ORDER BY created_at DESC").all(),
+  });
+});
+
+admin.post('/inventory', (req, res) => {
+  const { name, name_am, unit, stock, min_stock, cost, supplier } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'Give the item a name.' });
+  const itemId = id('inv');
+  db.prepare(`INSERT INTO inventory_items (id, name, name_am, unit, stock, min_stock, cost, supplier, active, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`).run(
+    itemId, name, name_am || null, unit || 'pcs', Number(stock) || 0, Number(min_stock) || 0, Number(cost) || 0, supplier || null, nowIso(),
+  );
+  audit({ actor: req.user, action: 'inventory-item', entity: 'inventory', entityId: itemId, detail: `Added ${name}` });
+  publish(['inventory']);
+  res.json({ id: itemId });
+});
+
+admin.patch('/inventory/:id', (req, res) => {
+  const item = db.prepare('SELECT * FROM inventory_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found.' });
+  const { name, name_am, unit, min_stock, cost, supplier, active } = req.body || {};
+  db.prepare(`UPDATE inventory_items SET name = COALESCE(?, name), name_am = COALESCE(?, name_am), unit = COALESCE(?, unit),
+              min_stock = COALESCE(?, min_stock), cost = COALESCE(?, cost), supplier = COALESCE(?, supplier),
+              active = COALESCE(?, active), updated_at = ? WHERE id = ?`).run(
+    name || null, name_am || null, unit || null,
+    min_stock === undefined ? null : Number(min_stock), cost === undefined ? null : Number(cost),
+    supplier || null, active === undefined ? null : active ? 1 : 0, nowIso(), req.params.id,
+  );
+  publish(['inventory']);
+  res.json({ ok: true });
+});
+
+admin.post('/inventory/:id/move', (req, res) => {
+  const result = ops.adjustStock({ inventoryItemId: req.params.id, qty: req.body?.qty, kind: req.body?.kind, note: req.body?.note, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+admin.get('/inventory/:id/moves', (req, res) => {
+  res.json({ moves: db.prepare('SELECT * FROM stock_moves WHERE inventory_item_id = ? ORDER BY created_at DESC LIMIT 50').all(req.params.id) });
+});
+
+admin.post('/inventory/purchase-requests', (req, res) => {
+  const result = ops.requestPurchase({ inventoryItemId: req.body?.inventory_item_id, qty: req.body?.qty, note: req.body?.note, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+admin.post('/inventory/purchase-requests/:id/close', (req, res) => {
+  db.prepare("UPDATE purchase_requests SET status = 'received', handled_at = ? WHERE id = ?").run(nowIso(), req.params.id);
+  publish(['inventory']);
+  res.json({ ok: true });
+});
+
+/** Recipes: what one plate takes off the shelf. */
+admin.get('/menu/:id/recipe', (req, res) => {
+  const menuItem = db.prepare('SELECT * FROM menu_items WHERE id = ?').get(req.params.id);
+  if (!menuItem) return res.status(404).json({ error: 'Menu item not found.' });
+  res.json({
+    menuItem: { id: menuItem.id, name: menuItem.name, price: menuItem.price },
+    lines: db.prepare(`SELECT r.id, r.inventory_item_id, r.qty, i.name, i.unit, i.cost FROM recipe_items r
+                       JOIN inventory_items i ON i.id = r.inventory_item_id WHERE r.menu_item_id = ?`).all(req.params.id),
+    items: db.prepare('SELECT id, name, unit, cost FROM inventory_items WHERE active = 1 ORDER BY name').all(),
+    cost: menuItemCost(req.params.id).reduce((sum, line) => sum + line.cost, 0),
+  });
+});
+
+admin.post('/menu/:id/recipe', (req, res) => {
+  const result = ops.setRecipe({ menuItemId: req.params.id, lines: req.body?.lines || [], actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+/* -------------------------------- branches ------------------------------- */
+
+admin.get('/branches', (req, res) => {
+  res.json({ branches: db.prepare('SELECT * FROM branches ORDER BY name').all() });
+});
+
+admin.post('/branches', (req, res) => {
+  const { name, code, address, phone } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'Give the branch a name.' });
+  const branchId = id('br');
+  db.prepare('INSERT INTO branches (id, name, code, address, phone, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)')
+    .run(branchId, name, code || null, address || null, phone || null, nowIso());
+  audit({ actor: req.user, action: 'branch', entity: 'branch', entityId: branchId, detail: `Added ${name}` });
+  publish(['branches']);
+  res.json({ id: branchId });
 });
 
 /* -------------------------------- uploads -------------------------------- */

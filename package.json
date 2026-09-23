@@ -15,7 +15,8 @@
     "refresh-demo": "npm run build && npm run reset-demo",
     "test:api": "node scripts/test-flows.mjs",
     "test:security": "node scripts/test-security.mjs",
-    "verify": "npm run smoke && npm run test:api && npm run test:security"
+    "verify": "npm run smoke && npm run test:api && npm run test:security",
+    "test:round3": "node scripts/test-round3.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

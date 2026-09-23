@@ -2,6 +2,7 @@ import { db, audit, id, nowIso } from './db.js';
 import { computeRoomCharge, folioTotals } from '../shared/billing.js';
 import { logEvent, nextOrderCode, orderView, menu } from './repo.js';
 import { publish, publishToRoles } from './realtime.js';
+import { consumeRecipe } from './ops.js';
 
 const STAY_CODE_START = 4101;
 
@@ -62,7 +63,7 @@ export function createGuest(fields, { source = 'cashier', actor } = {}) {
 }
 
 /** Check a guest into a room (cashier, or an approved QR registration). */
-export function checkInRoom({ roomId, guest: guestFields, guestId, billingMode, rate, deposit, method, expectedOutAt, adults, children, note, source = 'cashier', actor }) {
+export function checkInRoom({ roomId, guest: guestFields, guestId, billingMode, rate, deposit, method, currency, fxRate, expectedOutAt, adults, children, note, source = 'cashier', actor }) {
   const room = roomById(roomId);
   if (!room) return { error: 'Room not found.' };
   if (activeStayForRoom(roomId)) return { error: `Room ${room.number} already has an active guest.` };
@@ -86,15 +87,21 @@ export function checkInRoom({ roomId, guest: guestFields, guestId, billingMode, 
   }
   if (!guest) return { error: 'Guest details are required.' };
 
+  // The guest's money: frozen on the stay so the whole bill is quoted in it.
+  const billCurrency = String(currency || 'ETB').toUpperCase();
+  const billRate = billCurrency === 'ETB' ? 1 : Number(fxRate) || null;
+  if (billCurrency !== 'ETB' && !billRate) return { error: `No exchange rate is set for ${billCurrency}. Refresh the official rates first.` };
+
   const checkInAt = nowIso();
   const defaultOutHours = mode === 'nightly' ? 24 : mode === 'dayuse' ? (type?.dayuse_hours || 3) : 1;
   const sid = id('stay');
   db.prepare(`INSERT INTO stays (id, code, guest_id, room_id, billing_mode, rate, dayuse_hours, grace_hours, check_in_at, expected_out_at,
-      status, discount, adults, children, source, note, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?, ?, ?, ?, ?)`).run(
+      status, discount, adults, children, source, note, currency, fx_rate, branch_id, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     sid, nextStayCode(), guest.id, roomId, mode, finalRate, type?.dayuse_hours || 3, graceHours, checkInAt,
     expectedOutAt || new Date(Date.now() + defaultOutHours * 3600 * 1000).toISOString(),
-    Number(adults) || 1, Number(children) || 0, source, note || null, actor?.id || null, checkInAt, checkInAt,
+    Number(adults) || 1, Number(children) || 0, source, note || null, billCurrency, billRate,
+    room.branch_id || null, actor?.id || null, checkInAt, checkInAt,
   );
 
   if (Number(deposit) > 0) {
@@ -110,7 +117,7 @@ export function checkInRoom({ roomId, guest: guestFields, guestId, billingMode, 
   return { stayId: sid, guestId: guest.id, room: room.number };
 }
 
-export function postFolioItem({ stayId, kind, description, qty = 1, unitPrice = 0, amount, station, orderId, method, reference, clientRef, actor, at }) {
+export function postFolioItem({ stayId, kind, description, qty = 1, unitPrice = 0, amount, station, orderId, method, reference, clientRef, currency, fxRate, foreignAmount, actor, at }) {
   // Same device reference already posted? Return the original line, never a second one.
   if (clientRef) {
     const seen = db.prepare('SELECT id FROM folio_items WHERE client_ref = ?').get(clientRef);
@@ -119,15 +126,19 @@ export function postFolioItem({ stayId, kind, description, qty = 1, unitPrice = 
   const value = amount !== undefined ? Number(amount) : Number(qty) * Number(unitPrice);
   const itemId = id('fi');
   const when = at || nowIso();
-  db.prepare(`INSERT INTO folio_items (id, stay_id, kind, description, qty, unit_price, amount, station, order_id, method, reference, client_ref, bill_date, void, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
+  const stayRow = db.prepare('SELECT branch_id FROM stays WHERE id = ?').get(stayId);
+  db.prepare(`INSERT INTO folio_items (id, stay_id, kind, description, qty, unit_price, amount, station, order_id, method, reference, client_ref,
+                currency, fx_rate, foreign_amount, branch_id, bill_date, void, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
     itemId, stayId, kind, description, Number(qty) || 1, Number(unitPrice) || 0, value, station || null, orderId || null,
-    method || null, reference || null, clientRef || null, when.slice(0, 10), when, actor?.id || null,
+    method || null, reference || null, clientRef || null,
+    currency || null, fxRate || null, foreignAmount || null, stayRow?.branch_id || null,
+    when.slice(0, 10), when, actor?.id || null,
   );
   return itemId;
 }
 
-export function takePayment({ stayId, amount, method, reference, clientRef, actor }) {
+export function takePayment({ stayId, amount, method, reference, clientRef, currency, fxRate, foreignAmount, actor }) {
   const value = Math.abs(Number(amount) || 0);
   if (!value) return { error: 'Enter the amount received.' };
   if (clientRef && db.prepare('SELECT id FROM folio_items WHERE client_ref = ?').get(clientRef)) {
@@ -136,7 +147,11 @@ export function takePayment({ stayId, amount, method, reference, clientRef, acto
   }
   postFolioItem({
     stayId, kind: 'payment', method: method || 'Cash', reference, clientRef, actor,
-    description: `Payment · ${method || 'Cash'}${reference ? ` · ${reference}` : ''}`, amount: -value,
+    currency: currency && currency !== 'ETB' ? currency : null,
+    fxRate: currency && currency !== 'ETB' ? fxRate : null,
+    foreignAmount: currency && currency !== 'ETB' ? foreignAmount : null,
+    description: `Payment · ${method || 'Cash'}${reference ? ` · ${reference}` : ''}${currency && currency !== 'ETB' ? ` · ${currency} @ ${fxRate}` : ''}`,
+    amount: -value,
   });
   audit({ actor, action: 'payment', entity: 'stay', entityId: stayId, detail: `${value} via ${method || 'Cash'}${reference ? ` · ${reference}` : ''}` });
   publish(['folios', 'stays', 'rooms', 'reports']);
@@ -237,11 +252,11 @@ export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], n
   const createdAt = nowIso();
   const guestRow = stay ? db.prepare('SELECT * FROM guests WHERE id = ?').get(stay.guest_id) : null;
 
-  db.prepare(`INSERT INTO orders (id, code, room_id, stay_id, guest_name, channel, status, note, total, call_confirmed, charged, client_ref, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, 0, 0, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO orders (id, code, room_id, stay_id, guest_name, channel, status, note, total, call_confirmed, charged, client_ref, branch_id, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, 0, 0, ?, ?, ?, ?)`).run(
     orderId, code, room?.id || null, stay?.id || null,
     guestName || guestRow?.full_name || (isCounter ? 'Walk-in guest' : 'In-house guest'),
-    channel, note || null, total, clientRef || null, createdAt, actor?.id || 'guest-qr',
+    channel, note || null, total, clientRef || null, room?.branch_id || null, createdAt, actor?.id || 'guest-qr',
   );
 
   const insertItem = db.prepare(`INSERT INTO order_items (id, order_id, menu_item_id, name, name_am, qty, unit_price, station, status, note)
@@ -313,6 +328,11 @@ export function completeOrderItem({ itemId, actor }) {
   if (!item) return { error: 'Item not found.' };
   db.prepare("UPDATE order_items SET status = 'done', done_at = ? WHERE id = ?").run(nowIso(), itemId);
   logEvent(item.order_id, actor?.name || 'Station', 'item-done', `${item.name} × ${item.qty} ready`);
+  // Stock follows the plate: the recipe of this dish leaves the shelf now.
+  if (item.menu_item_id) {
+    const order = db.prepare('SELECT code FROM orders WHERE id = ?').get(item.order_id);
+    consumeRecipe({ menuItemId: item.menu_item_id, qty: item.qty, reference: order?.code || item.order_id, actor });
+  }
   let order = orderView(item.order_id);
   if (order?.allDone && !['ready', 'delivering', 'delivered', 'completed'].includes(order.status)) {
     db.prepare("UPDATE orders SET status = 'ready', ready_at = ? WHERE id = ?").run(nowIso(), item.order_id);

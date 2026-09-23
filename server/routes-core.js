@@ -1,13 +1,18 @@
 /** Core API: sign-in, the cashier's room board, guest bills, orders and stations. */
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import QRCode from 'qrcode';
-import { db, allSettings, nowIso } from './db.js';
+import { db, allSettings, nowIso, id, audit, UPLOAD_DIR } from './db.js';
 import { login, logout, requireAuth, requireRole, userForToken } from './auth.js';
 import * as repo from './repo.js';
 import * as actions from './actions.js';
 import { operationsSnapshot, revenueSummary, dailyClose, trends, guestHistory } from './reports.js';
 import { ROLES, STATIONS, computeRoomCharge, folioTotals } from '../shared/billing.js';
 import { recordLoginFailure, clearLoginFailures } from './security.js';
+import { rateCard, refreshRates, dualAmount } from './fx.js';
+import * as ops from './ops.js';
+import { REQUEST_KINDS } from './ops.js';
 
 export const core = express.Router();
 
@@ -15,6 +20,9 @@ const fail = (res, result, status = 400) => {
   if (result?.error) return res.status(status).json({ error: result.error });
   return res.json(result);
 };
+
+/** Async handlers go through here, so a failure answers 500 instead of crashing the server. */
+const guarded = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
 /* --------------------------------- auth ---------------------------------- */
 
@@ -131,7 +139,7 @@ core.post('/stays/:id/payment', requireAuth, requireRole('cashier', 'manager', '
 });
 
 core.post('/stays/:id/charge', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  const { kind = 'service', description, amount, station } = req.body || {};
+  const { kind = 'service', description, amount, station, country } = req.body || {};
   if (!description || !Number(amount)) return res.status(400).json({ error: 'Describe the charge and enter an amount.' });
   actions.postFolioItem({ stayId: req.params.id, kind, description, amount: Number(amount), station, actor: req.user });
   res.json({ stay: repo.stayView(req.params.id) });
@@ -225,6 +233,80 @@ core.post('/order-items/:id/done', requireAuth, requireRole(...STATION_ROLES), (
   fail(res, actions.completeOrderItem({ itemId: req.params.id, actor: req.user }));
 });
 
+/* -------------------------------- currency -------------------------------- */
+
+/** The desk needs today's rates to register a guest paying in dollars. */
+core.get('/fx', requireAuth, (req, res) => {
+  const card = rateCard();
+  res.json({ base: card.base, rates: card.rates, currencies: card.currencies, source: card.source, source_label: card.source_label, updated_at: card.updated_at });
+});
+
+/** The official-rates button. Anyone at the desk may press it; it only ever reads. */
+core.post('/fx/refresh', requireAuth, requireRole('cashier', 'manager', 'admin'), guarded(async (req, res) => {
+  const result = await refreshRates({ actor: req.user });
+  res.json({ ...rateCard(), ok: result.ok, error: result.error });
+}));
+
+/* ------------------------------ lost & found ----------------------------- */
+
+core.get('/lost-found', requireAuth, requireRole('cashier', 'housekeeping', 'maintenance', 'manager', 'admin'), (req, res) => {
+  res.json({ items: db.prepare("SELECT * FROM lost_found ORDER BY CASE status WHEN 'stored' THEN 0 ELSE 1 END, created_at DESC LIMIT 200").all() });
+});
+
+core.post('/lost-found', requireAuth, requireRole('cashier', 'housekeeping', 'manager', 'admin'), (req, res) => {
+  const result = ops.recordLostItem({ ...req.body, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+core.post('/lost-found/:id', requireAuth, requireRole('cashier', 'housekeeping', 'manager', 'admin'), (req, res) => {
+  const result = ops.updateLostItem({ foundId: req.params.id, ...req.body, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+/* --------------------------- identity documents -------------------------- */
+
+core.get('/guests/:id/document', requireAuth, requireRole('admin', 'manager', 'cashier'), (req, res) => {
+  const guest = db.prepare('SELECT id, full_name, id_document_url, id_document_at, id_document_by FROM guests WHERE id = ?').get(req.params.id);
+  if (!guest) return res.status(404).json({ error: 'Guest not found.' });
+  audit({ actor: req.user, action: 'id-document-view', entity: 'guest', entityId: guest.id, detail: 'Identity document opened' });
+  res.json({ guest });
+});
+
+core.post('/guests/:id/document', requireAuth, requireRole('admin', 'manager', 'cashier'), (req, res) => {
+  const { data_url: dataUrl } = req.body || {};
+  if (!dataUrl || !/^data:image\/(png|jpeg|jpg|webp);base64,/.test(dataUrl)) {
+    return res.status(400).json({ error: 'Photograph the ID (JPG, PNG or WEBP).' });
+  }
+  const buffer = Buffer.from(dataUrl.split(',')[1], 'base64');
+  if (buffer.length > 4 * 1024 * 1024) return res.status(400).json({ error: 'Photo is larger than 4 MB.' });
+  const ext = (dataUrl.match(/^data:image\/(\w+)/) || [, 'jpg'])[1].replace('jpeg', 'jpg');
+  const safe = `id-${req.params.id}-${Date.now()}.${ext}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, safe), buffer);
+  const result = ops.saveIdDocument({ guestId: req.params.id, url: `/uploads/${safe}`, actor: req.user });
+  res.json({ ...result, url: `/uploads/${safe}` });
+});
+
+/** Retention: throw away scans older than the hotel's policy. */
+core.post('/guests/purge-documents', requireAuth, requireRole('admin', 'manager'), (req, res) => {
+  const days = Number(req.body?.older_than_days) || Number(allSettings().id_retention_days) || 90;
+  res.json(ops.purgeIdDocuments({ olderThanDays: days, actor: req.user }));
+});
+
+/* ------------------------------- approvals ------------------------------- */
+
+/** A manager types their PIN to allow a discount or a void. */
+core.post('/approvals', requireAuth, requireRole('cashier', 'waiter', 'manager', 'admin'), (req, res) => {
+  const result = ops.requireApproval({ ...req.body, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+core.get('/approvals/needed', requireAuth, (req, res) => {
+  res.json({ needed: ops.discountNeedsApproval({ amount: Number(req.query.amount) || 0, percent: Number(req.query.percent) || 0 }) });
+});
+
 /* --------------------------- registrations / tasks ------------------------ */
 
 core.get('/checkin-requests', requireAuth, (req, res) => {
@@ -248,6 +330,16 @@ core.post('/housekeeping/:id/advance', requireAuth, requireRole('housekeeping', 
 });
 
 core.get('/maintenance', requireAuth, (req, res) => res.json({ issues: repo.maintenance() }));
+
+core.get('/maintenance/history/:roomId', requireAuth, requireRole('manager', 'admin', 'maintenance', 'cashier'), (req, res) => {
+  res.json(ops.maintenanceHistory({ roomId: req.params.roomId }));
+});
+
+core.post('/maintenance/:id/move', requireAuth, requireRole('maintenance', 'manager', 'admin', 'cashier'), (req, res) => {
+  const result = ops.moveMaintenance({ issueId: req.params.id, ...req.body, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
 
 core.post('/maintenance', requireAuth, (req, res) => {
   const { room_id, issue, category, priority, assignee } = req.body || {};
@@ -391,6 +483,11 @@ function guestRoomPayload(room) {
         }
       : null,
     bill: stay ? buildGuestBill(stay, items) : null,
+    // What the guest may ask for from the room (not only food).
+    requestKinds: Object.values(REQUEST_KINDS).map((kind) => ({
+      key: kind.key, label: kind.label, am: kind.am, icon: kind.icon,
+      priced: Boolean(kind.priced), service: kind.priced || false,
+    })),
     canOrder: !!stay,
     fields: repo.registrationFields(),
   };
@@ -443,9 +540,75 @@ function buildGuestBill(stay, items) {
     total: totals.total,
     paid: totals.paid,
     balance: totals.balance,
+    // The same numbers in the guest's own currency, at the rate agreed at check-in.
+    display_currency: stay.currency || "ETB",
+    display_rate: stay.currency && stay.currency !== "ETB" ? stay.fx_rate : null,
+    display: (() => {
+      if (!stay.currency || stay.currency === "ETB") return null;
+      const convert = (value) => {
+        const meta = { USD: [2, "$"], EUR: [2, "€"], GBP: [2, "£"], AED: [2, "AED"], SAR: [2, "SAR"], CNY: [2, "¥"], KES: [2, "KSh"], DJF: [0, "Fdj"], CAD: [2, "C$"], CHF: [2, "CHF"], JPY: [0, "¥"] }[stay.currency] || [2, ""];
+        return `${meta[1]} ${(Number(value) / (stay.fx_rate || 1)).toFixed(meta[0])}`;
+      };
+      return {
+        currency: stay.currency,
+        rate: stay.fx_rate,
+        room: convert(totals.room), food: convert(totals.food), service: convert(totals.service),
+        other: convert(totals.other), discount: convert(Math.abs(totals.discount)),
+        total: convert(totals.total), paid: convert(totals.paid), balance: convert(totals.balance),
+        service_charge: convert(totals.service), vat: convert(totals.vat),
+      };
+    })(),
     note: 'The desk settles the final bill when you check out. Food and services ordered in the room appear here immediately.',
   };
 }
+
+/* ---------------------------- guest requests ----------------------------- */
+
+core.get('/requests', requireAuth, (req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT * FROM guest_requests
+       WHERE (? IS NULL OR status = ?) AND (? IS NULL OR department = ?)
+       ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END, created_at DESC
+       LIMIT ?`,
+    )
+    .all(
+      req.query.status || null, req.query.status || null,
+      req.query.department || null, req.query.department || null,
+      Number(req.query.limit) || 100,
+    );
+  res.json({
+    requests: rows.map((row) => ({
+      ...row,
+      label: REQUEST_KINDS[row.kind]?.label || row.kind,
+      am: REQUEST_KINDS[row.kind]?.am || null,
+    })),
+  });
+});
+
+core.post('/requests', requireAuth, requireRole('cashier', 'waiter', 'housekeeping', 'maintenance', 'manager', 'admin'), (req, res) => {
+  const result = ops.createGuestRequest({ roomId: req.body?.room_id, kind: req.body?.kind, note: req.body?.note, actor: req.user, source: 'staff' });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+core.post('/requests/:id/advance', requireAuth, requireRole('cashier', 'waiter', 'kitchen', 'pastry', 'barista', 'juice', 'housekeeping', 'maintenance', 'manager', 'admin'), (req, res) => {
+  const result = ops.advanceGuestRequest({ requestId: req.params.id, status: req.body?.status, note: req.body?.note, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+/* ------------------------- charge anything to a room ---------------------- */
+
+core.get('/services', requireAuth, (req, res) => {
+  res.json({ services: db.prepare('SELECT * FROM services WHERE active = 1 ORDER BY sort, name').all() });
+});
+
+core.post('/stays/:id/service', requireAuth, requireRole('cashier', 'waiter', 'manager', 'admin'), (req, res) => {
+  const result = ops.postServiceToRoom({ stayId: req.params.id, ...req.body, actor: req.user });
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
 
 core.get('/public/hotel', (req, res) => {
   const settings = allSettings();
@@ -492,6 +655,23 @@ core.post('/public/register/:token', (req, res) => {
   if (actions.activeStayForRoom(room.id)) return res.status(400).json({ error: 'This room is already occupied. Please speak to the reception desk.' });
   const result = actions.createCheckinRequest({ roomId: room.id, payload: req.body?.fields || {}, source: 'qr' });
   res.json({ ...result, message: 'Thank you! Your details were sent to the reception desk for confirmation.' });
+});
+
+core.post('/public/request/:token', (req, res) => {
+  const room = roomByToken(req.params.token);
+  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room any more.' });
+  const kind = String(req.body?.kind || 'other');
+  if (!REQUEST_KINDS[kind]) return res.status(400).json({ error: 'Please choose what you need.' });
+  const note = String(req.body?.note || '').slice(0, 400);
+  if (kind === 'other' && !note) return res.status(400).json({ error: 'Please write what you need.' });
+  const result = ops.createGuestRequest({ roomId: room.id, kind, note, source: 'qr' });
+  res.json({ ...result, message: 'Sent to the hotel — someone is on the way.' });
+});
+
+core.get('/public/rates', (req, res) => {
+  const card = rateCard();
+  // Guests only need to read it, never to change it.
+  res.json({ base: card.base, rates: card.rates, source_label: card.source_label, updated_at: card.updated_at, currencies: card.currencies });
 });
 
 core.get('/public/bill/:token', (req, res) => {

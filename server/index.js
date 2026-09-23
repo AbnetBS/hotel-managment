@@ -73,6 +73,14 @@ if (fs.existsSync(distDir)) {
 // Anything thrown or passed to next() lands here — never a stack trace to the client.
 app.use(errorHandler);
 
+// Keep running no matter what: a failed background task must never close the hotel's desk.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandled]', reason?.message || reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('[uncaught]', error?.stack || error);
+});
+
 const server = http.createServer(app);
 attachRealtime(server);
 

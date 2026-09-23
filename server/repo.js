@@ -114,6 +114,10 @@ export function stayView(stayId) {
     guest: guestView(guest),
     billing_mode: stay.billing_mode,
     rate: stay.rate,
+    // The money the guest agreed to pay in, frozen at check-in.
+    currency: stay.currency || 'ETB',
+    fx_rate: stay.fx_rate || (stay.currency && stay.currency !== 'ETB' ? null : 1),
+    branch_id: stay.branch_id || null,
     dayuse_hours: stay.dayuse_hours,
     grace_hours: stay.grace_hours,
     units_override: stay.units_override,
@@ -238,7 +242,13 @@ export function housekeeping({ status } = {}) {
 export function maintenance() {
   return db.prepare('SELECT * FROM maintenance_issues ORDER BY created_at DESC').all().map((m) => {
     const room = db.prepare('SELECT number FROM rooms WHERE id = ?').get(m.room_id);
-    return { id: m.id, room_id: m.room_id, room_number: room?.number || '—', issue: m.issue, category: m.category, assignee: m.assignee, priority: m.priority, status: m.status, created_at: m.created_at, resolved_at: m.resolved_at };
+    return {
+      id: m.id, room_id: m.room_id, room_number: room?.number || '—', issue: m.issue, category: m.category,
+      assignee: m.assignee, priority: m.priority, status: m.status,
+      cost: m.cost ?? null, verified_by: m.verified_by || null,
+      started_at: m.started_at || null, fixed_at: m.fixed_at || null,
+      created_at: m.created_at, resolved_at: m.resolved_at,
+    };
   });
 }
 

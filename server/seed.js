@@ -22,6 +22,8 @@ export function resetAll() {
   const tables = [
     'audit_log', 'checkin_requests', 'order_events', 'order_items', 'orders', 'folio_items', 'stays', 'reservations',
     'guests', 'menu_items', 'menu_categories', 'rooms', 'room_types', 'registration_fields', 'housekeeping_tasks',
+    'guest_requests', 'lost_found', 'inventory_items', 'recipe_items', 'stock_moves', 'purchase_requests',
+    'approvals', 'services', 'branches',
     'maintenance_issues', 'users', 'settings',
   ];
   db.pragma('foreign_keys = OFF');
@@ -53,7 +55,139 @@ export function seed() {
     alert_sound: 1,
     require_call_confirmation: 1,
   };
+  settings.fx_enabled = 1;
+  settings.fx_source = 'fallback';
+  settings.discount_limit_percent = 10;
+  settings.discount_limit_amount = 1500;
+  settings.id_retention_days = 90;
+  settings.branch_name = 'Clove House · Bole';
   for (const [k, v] of Object.entries(settings)) setSetting(k, v);
+
+
+  /* ------------------------- services you can charge ------------------------ */
+  const services = [
+    ['sv-laundry', 'Laundry · per kg', 'ልብስ ማጠቢያ', 'service', 120, 'housekeeping', 0],
+    ['sv-laundry-express', 'Express laundry (4 hours)', 'አስቸኳይ ልብስ', 'service', 220, 'housekeeping', 1],
+    ['sv-minibar', 'Minibar', 'ሚኒባር', 'service', 250, 'juice', 2],
+    ['sv-water', 'Bottled water (delivered)', 'ውሃ', 'service', 40, 'juice', 3],
+    ['sv-airport', 'Airport pickup', 'የአውሮፕላን ማረፊያ', 'service', 900, 'desk', 4],
+    ['sv-taxi', 'Taxi around town', 'ታክሲ', 'service', 500, 'desk', 5],
+    ['sv-spa', 'Massage · 60 min', 'ማሳጅ', 'service', 1200, 'desk', 6],
+    ['sv-cake', 'Cake delivered to the room', 'ኬክ', 'service', 1450, 'pastry', 7],
+    ['sv-simcard', 'Local SIM card', 'ሲም ካርድ', 'other', 150, 'desk', 8],
+    ['sv-iron', 'Iron & board brought up', 'ማጠንጠኛ', 'service', 0, 'housekeeping', 9],
+  ];
+  const insertService = db.prepare('INSERT INTO services (id, name, name_am, kind, price, station, active, sort) VALUES (?, ?, ?, ?, ?, ?, 1, ?)');
+  for (const row of services) insertService.run(...row);
+
+  /* -------------------------------- branches ------------------------------- */
+  db.prepare('INSERT INTO branches (id, name, code, address, phone, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)')
+    .run('br-main', 'Clove House · Bole', 'MAIN', 'Bole Road, Addis Ababa', '+251 11 662 4400', nowIso());
+  const mainBranch = 'br-main';
+  db.prepare('UPDATE rooms SET branch_id = ?').run(mainBranch);
+  db.prepare('UPDATE users SET branch_id = ?').run(mainBranch);
+  db.prepare('UPDATE stays SET branch_id = ?').run(mainBranch);
+  db.prepare('UPDATE orders SET branch_id = ?').run(mainBranch);
+  db.prepare('UPDATE folio_items SET branch_id = ?').run(mainBranch);
+
+  /* ------------------------------- inventory ------------------------------- */
+  const stock = [
+    ['inv-chicken', 'Chicken breast', 'የዶሮ ስጋ', 'kg', 8, 5, 420, 'Bole poultry'],
+    ['inv-beef', 'Beef (tibs cut)', 'የበሬ ስጋ', 'kg', 12, 6, 780, 'Kera butchery'],
+    ['inv-injera', 'Injera', 'እንጀራ', 'pcs', 60, 30, 12, 'Local bakery'],
+    ['inv-berbere', 'Berbere', 'በርበሬ', 'kg', 4, 2, 380, 'Merkato spice shop'],
+    ['inv-shiroro', 'Shiro powder', 'ሽሮ', 'kg', 6, 3, 210, 'Merkato spice shop'],
+    ['inv-oil', 'Cooking oil', 'ዘይት', 'L', 12, 6, 190, 'Wholesaler'],
+    ['inv-eggs', 'Eggs', 'እንቁላል', 'pcs', 90, 60, 9, 'Farm delivery'],
+    ['inv-milk', 'Milk', 'ወተት', 'L', 18, 12, 65, 'Farm delivery'],
+    ['inv-coffee', 'Coffee beans (Yirgacheffe)', 'ቡና', 'kg', 5, 3, 620, 'Yirgacheffe supplier'],
+    ['inv-mango', 'Mango', 'ማንጎ', 'kg', 9, 5, 120, 'Fruit market'],
+    ['inv-avocado', 'Avocado', 'አቮካዶ', 'kg', 7, 4, 140, 'Fruit market'],
+    ['inv-water', 'Bottled water 500ml', 'ውሃ', 'pcs', 140, 60, 22, 'Beverage supplier'],
+    ['inv-soft', 'Soft drinks 330ml', 'ለስላሳ', 'pcs', 96, 48, 32, 'Beverage supplier'],
+    ['inv-beer', 'Beer 330ml', 'ቢራ', 'pcs', 72, 36, 55, 'Beverage supplier'],
+    ['inv-flour', 'Flour', 'ዱቄት', 'kg', 25, 15, 95, 'Wholesaler'],
+    ['inv-sugar', 'Sugar', 'ስኳር', 'kg', 20, 10, 130, 'Wholesaler'],
+    ['inv-butter', 'Butter', 'ቅቤ', 'kg', 6, 3, 700, 'Dairy supplier'],
+    ['inv-cocoa', 'Cocoa powder', 'ኮኮ', 'kg', 3, 2, 850, 'Pastry supplier'],
+    ['inv-cream', 'Cream', 'ክሬም', 'L', 5, 3, 380, 'Dairy supplier'],
+    ['inv-toilet', 'Toilet paper', 'የሽንት ቤት ወረቀት', 'rolls', 80, 40, 28, 'Housekeeping supplier'],
+    ['inv-soap', 'Guest soap', 'ሳሙና', 'pcs', 120, 60, 18, 'Housekeeping supplier'],
+    ['inv-towel', 'Bath towels', 'ፎጣ', 'pcs', 45, 60, 260, 'Linen supplier'],
+  ];
+  const insertStock = db.prepare(`INSERT INTO inventory_items (id, name, name_am, unit, stock, min_stock, cost, supplier, active, updated_at)
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`);
+  for (const row of stock) insertStock.run(...row, nowIso());
+
+  /* recipes: what one plate takes off the shelf */
+  const recipes = [
+    ['mi-dorowat', [['inv-chicken', 0.35], ['inv-injera', 2], ['inv-berbere', 0.04], ['inv-oil', 0.05]]],
+    ['mi-beef-tibs', [['inv-beef', 0.3], ['inv-injera', 2], ['inv-oil', 0.04]]],
+    ['mi-shiro', [['inv-shiroro', 0.12], ['inv-injera', 2], ['inv-oil', 0.03]]],
+    ['mi-firfir', [['inv-injera', 1.5], ['inv-berbere', 0.03], ['inv-oil', 0.03]]],
+    ['mi-eggs', [['inv-eggs', 2], ['inv-oil', 0.02]]],
+    ['mi-omelette', [['inv-eggs', 3], ['inv-butter', 0.02]]],
+    ['mi-pasta', [['inv-chicken', 0.12], ['inv-cream', 0.1], ['inv-flour', 0.05]]],
+    ['mi-burger', [['inv-beef', 0.18], ['inv-flour', 0.09], ['inv-oil', 0.05]]],
+    ['mi-coffee', [['inv-coffee', 0.015], ['inv-sugar', 0.008]]],
+    ['mi-macchiato', [['inv-coffee', 0.018], ['inv-milk', 0.12]]],
+    ['mi-espresso', [['inv-coffee', 0.018]]],
+    ['mi-tea', [['inv-sugar', 0.01]]],
+    ['mi-hotchoc', [['inv-cocoa', 0.02], ['inv-milk', 0.2]]],
+    ['mi-mango', [['inv-mango', 0.3]]],
+    ['mi-avocado', [['inv-avocado', 0.25]]],
+    ['mi-papaya', [['inv-mango', 0.2]]],
+    ['mi-spris', [['inv-avocado', 0.15], ['inv-mango', 0.15]]],
+    ['mi-water', [['inv-water', 1]]],
+    ['mi-ambo', [['inv-water', 1]]],
+    ['mi-coke', [['inv-soft', 1]]],
+    ['mi-beer', [['inv-beer', 1]]],
+    ['mi-cake-slice', [['inv-flour', 0.08], ['inv-cream', 0.05], ['inv-sugar', 0.04]]],
+    ['mi-cheesecake', [['inv-flour', 0.09], ['inv-cream', 0.08], ['inv-sugar', 0.05]]],
+    ['mi-birthday', [['inv-flour', 0.4], ['inv-cream', 0.3], ['inv-sugar', 0.25], ['inv-butter', 0.2]]],
+    ['mi-croissant', [['inv-flour', 0.07], ['inv-butter', 0.04]]],
+    ['mi-donut', [['inv-flour', 0.06], ['inv-sugar', 0.03], ['inv-oil', 0.03]]],
+    ['mi-cookie', [['inv-flour', 0.05], ['inv-butter', 0.03], ['inv-sugar', 0.03]]],
+    ['mi-sambusa', [['inv-flour', 0.06], ['inv-oil', 0.04]]],
+    ['mi-chips', [['inv-oil', 0.08], ['inv-berbere', 0.01]]],
+    ['mi-club', [['inv-flour', 0.08], ['inv-chicken', 0.08], ['inv-eggs', 1]]],
+    ['mi-fruit', [['inv-mango', 0.2], ['inv-avocado', 0.1]]],
+    ['mi-beyaynetu', [['inv-shiroro', 0.08], ['inv-injera', 2], ['inv-oil', 0.02]]],
+    ['mi-kitfo', [['inv-beef', 0.25], ['inv-butter', 0.03]]],
+    ['mi-eggtibs', [['inv-beef', 0.12], ['inv-eggs', 2]]],
+    ['mi-chechebsa', [['inv-flour', 0.1], ['inv-berbere', 0.03], ['inv-butter', 0.02]]],
+    ['mi-wine', []],
+  ];
+  const insertRecipe = db.prepare('INSERT INTO recipe_items (id, menu_item_id, inventory_item_id, qty) VALUES (?, ?, ?, ?)');
+  for (const [menuItemId, lines] of recipes) {
+    for (const [inventoryItemId, qty] of lines) insertRecipe.run(id('rc'), menuItemId, inventoryItemId, qty);
+  }
+
+  /* ------------------- a week of usage so the forecast is real ------------- */
+  const move = db.prepare('INSERT INTO stock_moves (id, inventory_item_id, qty, kind, reference, actor, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const usage = [
+    ['inv-chicken', -2.4], ['inv-beef', -3.1], ['inv-injera', -18], ['inv-berbere', -0.9],
+    ['inv-oil', -2.2], ['inv-eggs', -30], ['inv-milk', -6], ['inv-coffee', -1.1],
+    ['inv-mango', -3.4], ['inv-avocado', -2.1], ['inv-water', -52], ['inv-soft', -34],
+    ['inv-beer', -22], ['inv-flour', -6.5], ['inv-sugar', -4.2], ['inv-butter', -1.6],
+    ['inv-cocoa', -0.6], ['inv-cream', -1.4], ['inv-toilet', -24], ['inv-soap', -18],
+  ];
+  usage.forEach(([inventoryItemId, qty], index) => {
+    move.run(id('sm'), inventoryItemId, qty, 'usage', 'seed', 'Kitchen', new Date(Date.now() - (index % 7) * 86400000).toISOString());
+  });
+  // one thing is already below its minimum, so the warning is visible in the demo
+  db.prepare("UPDATE inventory_items SET stock = 3 WHERE id = 'inv-cocoa'").run();
+  db.prepare("UPDATE inventory_items SET stock = 18 WHERE id = 'inv-water'").run(); // ~2 days left at this week's pace
+  db.prepare("UPDATE inventory_items SET stock = 2 WHERE id = 'inv-cream'").run();
+  db.prepare('INSERT INTO purchase_requests (id, inventory_item_id, name, qty, unit, status, note, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id('pr'), 'inv-cream', 'Cream', 10, 'L', 'open', 'Cake orders this weekend', nowIso(), 'Chef Dawit Molla');
+
+  /* ------------------------------ lost & found ---------------------------- */
+  const insertLost = db.prepare(`INSERT INTO lost_found (id, item, description, found_at, location, room_id, found_by, guest_name, storage, status, created_at)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  insertLost.run('lf-1', 'Phone charger', 'White USB-C charger', new Date(Date.now() - 2 * 86400000).toISOString(), 'Room 203 bedside', 'r-203', 'Tigist Mulatu', 'Mekdes Haile', 'Shelf A · box 2', 'stored', new Date(Date.now() - 2 * 86400000).toISOString());
+  insertLost.run('lf-2', 'Sunglasses', 'Ray-Ban, black case', new Date(Date.now() - 5 * 86400000).toISOString(), 'Lobby sofa', null, 'Hana Girma', null, 'Shelf A · box 1', 'stored', new Date(Date.now() - 5 * 86400000).toISOString());
+  insertLost.run('lf-3', 'Umbrella', 'Hotel umbrella', new Date(Date.now() - 9 * 86400000).toISOString(), 'Restaurant terrace', null, 'Yonas Tesfaye', 'Liam Osei', 'Shelf B', 'returned', new Date(Date.now() - 9 * 86400000).toISOString());
 
   /* -------------------------------- users --------------------------------- */
   const staff = [

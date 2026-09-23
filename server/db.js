@@ -267,6 +267,121 @@ CREATE TABLE IF NOT EXISTS reservations (
   created_by TEXT
 );
 
+/* ------------------------- guest requests (QR) --------------------------- */
+CREATE TABLE IF NOT EXISTS guest_requests (
+  id TEXT PRIMARY KEY,
+  stay_id TEXT,
+  room_id TEXT,
+  room_number TEXT,
+  guest_name TEXT,
+  kind TEXT NOT NULL,
+  department TEXT,
+  note TEXT,
+  status TEXT DEFAULT 'new',
+  priority TEXT DEFAULT 'normal',
+  handled_by TEXT,
+  handled_at TEXT,
+  created_at TEXT
+);
+
+/* ------------------------------ lost & found ----------------------------- */
+CREATE TABLE IF NOT EXISTS lost_found (
+  id TEXT PRIMARY KEY,
+  item TEXT NOT NULL,
+  description TEXT,
+  found_at TEXT,
+  location TEXT,
+  room_id TEXT,
+  found_by TEXT,
+  guest_name TEXT,
+  storage TEXT,
+  status TEXT DEFAULT 'stored',
+  returned_to TEXT,
+  returned_at TEXT,
+  created_at TEXT
+);
+
+/* ------------------------- inventory and recipes ------------------------- */
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  name_am TEXT,
+  unit TEXT DEFAULT 'pcs',
+  stock REAL DEFAULT 0,
+  min_stock REAL DEFAULT 0,
+  cost REAL DEFAULT 0,
+  supplier TEXT,
+  active INTEGER DEFAULT 1,
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS recipe_items (
+  id TEXT PRIMARY KEY,
+  menu_item_id TEXT NOT NULL,
+  inventory_item_id TEXT NOT NULL,
+  qty REAL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS stock_moves (
+  id TEXT PRIMARY KEY,
+  inventory_item_id TEXT NOT NULL,
+  qty REAL DEFAULT 0,
+  kind TEXT DEFAULT 'usage',
+  reference TEXT,
+  note TEXT,
+  actor TEXT,
+  created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS purchase_requests (
+  id TEXT PRIMARY KEY,
+  inventory_item_id TEXT,
+  name TEXT,
+  qty REAL DEFAULT 0,
+  unit TEXT,
+  status TEXT DEFAULT 'open',
+  note TEXT,
+  created_at TEXT,
+  created_by TEXT,
+  handled_at TEXT
+);
+
+/* --------------------- branches (hotel group growth) --------------------- */
+CREATE TABLE IF NOT EXISTS branches (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT,
+  address TEXT,
+  phone TEXT,
+  active INTEGER DEFAULT 1,
+  created_at TEXT
+);
+
+/* ------------------- approvals for sensitive actions --------------------- */
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  detail TEXT,
+  amount REAL,
+  reason TEXT,
+  approved_by TEXT NOT NULL,
+  requested_by TEXT,
+  created_at TEXT,
+  expires_at TEXT
+);
+
+/* ------------------------------ extra services --------------------------- */
+CREATE TABLE IF NOT EXISTS services (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  name_am TEXT,
+  kind TEXT DEFAULT 'service',
+  price REAL DEFAULT 0,
+  station TEXT,
+  active INTEGER DEFAULT 1,
+  sort INTEGER DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY,
   at TEXT,
@@ -298,6 +413,43 @@ ensureColumn('housekeeping_tasks', 'started_at', 'TEXT');
 // Duplicate protection: a payment or an order carries the id the device made up,
 // so a retry after a dropped connection can never land twice.
 ensureColumn('folio_items', 'client_ref', 'TEXT');
+// currency on the folio: a bill can be quoted in the guest's own money
+ensureColumn('stays', 'currency', 'TEXT');
+ensureColumn('stays', 'fx_rate', 'REAL');
+ensureColumn('folio_items', 'currency', 'TEXT');
+ensureColumn('folio_items', 'fx_rate', 'REAL');
+ensureColumn('folio_items', 'foreign_amount', 'REAL');
+// maintenance gets a full lifecycle
+ensureColumn('maintenance_issues', 'assigned_to', 'TEXT');
+ensureColumn('maintenance_issues', 'started_at', 'TEXT');
+ensureColumn('maintenance_issues', 'fixed_at', 'TEXT');
+ensureColumn('maintenance_issues', 'verified_by', 'TEXT');
+ensureColumn('maintenance_issues', 'cost', 'REAL');
+// identity documents (kept minimal, access-controlled)
+ensureColumn('guests', 'id_document_url', 'TEXT');
+ensureColumn('guests', 'id_document_at', 'TEXT');
+ensureColumn('guests', 'id_document_by', 'TEXT');
+// branches
+ensureColumn('rooms', 'branch_id', 'TEXT');
+ensureColumn('users', 'branch_id', 'TEXT');
+ensureColumn('stays', 'branch_id', 'TEXT');
+ensureColumn('orders', 'branch_id', 'TEXT');
+ensureColumn('guests', 'branch_id', 'TEXT');
+ensureColumn('reservations', 'branch_id', 'TEXT');
+ensureColumn('housekeeping_tasks', 'branch_id', 'TEXT');
+ensureColumn('maintenance_issues', 'branch_id', 'TEXT');
+ensureColumn('inventory_items', 'branch_id', 'TEXT');
+ensureColumn('folio_items', 'branch_id', 'TEXT');
+
+// reports per branch and per day get faster with these
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_stays_branch ON stays(branch_id, status);
+  CREATE INDEX IF NOT EXISTS idx_orders_branch ON orders(branch_id, status);
+  CREATE INDEX IF NOT EXISTS idx_folio_branch ON folio_items(branch_id, bill_date);
+  CREATE INDEX IF NOT EXISTS idx_guest_requests_status ON guest_requests(status, department);
+  CREATE INDEX IF NOT EXISTS idx_stock_moves_item ON stock_moves(inventory_item_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_recipe_menu ON recipe_items(menu_item_id);
+`);
 ensureColumn('orders', 'client_ref', 'TEXT');
 
 db.exec(`
