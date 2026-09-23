@@ -1,0 +1,38 @@
+{
+  "name": "clove-house-hotel",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Clove House \u2014 hotel operations system (cashier, kitchen, barista, juice, waiter, admin) with guest QR ordering",
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,cyan \"npm:server\" \"npm:web\"",
+    "server": "node server/index.js",
+    "web": "vite",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "reset-demo": "node server/seed.js --reset",
+    "smoke": "node scripts/smoke.mjs",
+    "refresh-demo": "npm run build && npm run reset-demo",
+    "test:api": "node scripts/test-flows.mjs",
+    "test:security": "node scripts/test-security.mjs",
+    "verify": "node scripts/smoke.mjs && node scripts/test-flows.mjs && node scripts/test-round3.mjs && node scripts/test-security.mjs",
+    "test:round3": "node scripts/test-round3.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "concurrently": "^9.2.1",
+    "jsdom": "^30.1.1",
+    "vite": "^7.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
