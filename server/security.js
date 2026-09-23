@@ -171,38 +171,83 @@ export function rateLimit({ name = 'api', windowMs = 60_000, max = 60, key = (re
 
 /* ---------------------------- sign-in guard ------------------------------ */
 /**
- * Sign-in is throttled on *failed* attempts only, keyed by the desk's IP and the
- * username being tried. That stops PIN guessing without ever locking a cashier
- * out of her own account because somebody else hammered the door.
+ * Failed PINs are counted per desk (IP) + username, and the penalty grows:
+ *
+ *   5 wrong PINs → 30s pause · 6th → 1 min · 7th → 2 min · 8th+ → 5 min
+ *
+ * Deliberately short at first, because staff share one Wi-Fi address and a
+ * mischievous guest must never be able to lock the cashier out for long. The
+ * manager can clear a pause instantly from Admin → Audit log.
  */
-const LOGIN_MAX = Number(process.env.LOGIN_MAX_ATTEMPTS || 10);
-const LOGIN_WINDOW = 5 * 60_000;
+const LOGIN_MAX = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
+const LOGIN_WINDOW = 10 * 60_000;
+const PENALTY_STEPS = [30, 60, 120, 300]; // seconds
+const MAX_PAUSE = 600_000;
 
-const loginKeyOf = (req) => `login:${req.ip}:${String(req.body?.username || '').toLowerCase().slice(0, 40)}`;
+const loginKeyOf = (req, username) =>
+  `login:${req.ip}:${String(username ?? req.body?.username ?? '').toLowerCase().slice(0, 40)}`;
+
+function loginEntry(key) {
+  const now = Date.now();
+  let entry = buckets.get(key);
+  if (!entry || entry.resetAt <= now) {
+    entry = { count: 0, pausedUntil: 0, resetAt: now + LOGIN_WINDOW };
+    buckets.set(key, entry);
+  }
+  return entry;
+}
 
 export function loginGuard(req, res, next) {
   const entry = buckets.get(loginKeyOf(req));
   const now = Date.now();
-  if (entry && entry.resetAt > now && entry.count >= LOGIN_MAX) {
-    const retry = Math.ceil((entry.resetAt - now) / 1000);
+  if (entry && entry.pausedUntil > now) {
+    const retry = Math.ceil((entry.pausedUntil - now) / 1000);
     res.setHeader('Retry-After', String(retry));
-    return res.status(429).json({ error: `Too many wrong PINs for "${req.body?.username}". Try again in ${retry}s, or ask the manager to reset the PIN.` });
+    return res.status(429).json({
+      error: `Too many wrong PINs for "${req.body?.username}". Wait ${retry}s, or ask the manager to clear it (Admin → Audit log).`,
+      retryAfter: retry,
+    });
   }
-  if (entry && entry.resetAt <= now) buckets.delete(loginKeyOf(req));
   next();
 }
 
 export function recordLoginFailure(req) {
-  const key = loginKeyOf(req);
-  const now = Date.now();
-  const entry = buckets.get(key);
-  if (!entry || entry.resetAt <= now) buckets.set(key, { count: 1, resetAt: now + LOGIN_WINDOW });
-  else entry.count += 1;
-  return LOGIN_MAX - (buckets.get(key)?.count || 0);
+  const entry = loginEntry(loginKeyOf(req));
+  entry.count += 1;
+  if (entry.count >= LOGIN_MAX) {
+    const step = PENALTY_STEPS[Math.min(entry.count - LOGIN_MAX, PENALTY_STEPS.length - 1)];
+    entry.pausedUntil = Math.min(Date.now() + step * 1000, Date.now() + MAX_PAUSE);
+  }
+  return { attemptsLeft: Math.max(0, LOGIN_MAX - entry.count), paused: entry.pausedUntil > Date.now() };
 }
 
 export function clearLoginFailures(req) {
   buckets.delete(loginKeyOf(req));
+}
+
+/** Who is paused right now (shown to the manager). */
+export function loginPauses() {
+  const now = Date.now();
+  const out = [];
+  for (const [key, entry] of buckets) {
+    if (!key.startsWith('login:') || entry.pausedUntil <= now) continue;
+    const [, ip, username] = key.split(':');
+    out.push({ username, ip, secondsLeft: Math.ceil((entry.pausedUntil - now) / 1000), failures: entry.count });
+  }
+  return out.sort((a, b) => b.secondsLeft - a.secondsLeft);
+}
+
+/** Let an owner or manager unblock a colleague at once. */
+export function clearLoginPauses(username) {
+  const needle = String(username || '').toLowerCase();
+  let cleared = 0;
+  for (const key of [...buckets.keys()]) {
+    if (key.startsWith('login:') && (!needle || key.toLowerCase().endsWith(`:${needle}`))) {
+      buckets.delete(key);
+      cleared += 1;
+    }
+  }
+  return cleared;
 }
 
 /**

@@ -33,17 +33,28 @@ check('a cashier cannot change hotel settings', settingsTry.status === 403, `sta
 const bad = await fetch(base + '/api/rooms', { headers: { 'x-clove-token': 'not-a-real-token' } });
 check('a made-up token is refused', bad.status === 401 || bad.status === 403, `status ${bad.status}`);
 
-// brute force: many wrong PINs get throttled, and a correct one still works afterwards
+// Brute force: hammer a *non-existent* username so the test never pauses a real
+// account (the guard counts failures per desk + username).
 let throttled = false;
 for (let i = 0; i < 20; i += 1) {
-  const r = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', pin: '0000' }) });
+  const r = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'ghost-security-test', pin: '0000' }) });
   if (r.status === 429) { throttled = true; break; }
 }
 check('guessing PINs gets rate limited', throttled);
 const stillIn = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'manager', pin: '1234' }) });
-check('other staff can still sign in while one username is paused', stillIn.status === 200, `status ${stillIn.status}`);
-const lockedOut = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', pin: '1234' }) });
-check('the attacked username is paused (PIN guessing stopped)', lockedOut.status === 429, `status ${lockedOut.status}`);
+check('real staff can still sign in during an attack', stillIn.status === 200, `status ${stillIn.status}`);
+const realWrong = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'cashier', pin: '0000' }) });
+check('one wrong PIN on a real account is just refused', realWrong.status === 401, `status ${realWrong.status}`);
+
+// the manager can put a paused colleague back to work straight away
+const adminToken = (await (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', pin: '1234' }) })).json()).token;
+const paused = await (await fetch(base + '/api/admin/login-pauses', { headers: { 'x-clove-token': adminToken } })).json();
+check('the manager can see who is paused', Array.isArray(paused.pauses) && paused.pauses.some((p) => p.username === 'ghost-security-test'), `${paused.pauses.length} paused`);
+const cleared = await (await fetch(base + '/api/admin/login-pauses/clear', { method: 'POST', headers: { 'content-type': 'application/json', 'x-clove-token': adminToken }, body: JSON.stringify({ username: 'ghost-security-test' }) })).json();
+const afterClear = await (await fetch(base + '/api/admin/login-pauses', { headers: { 'x-clove-token': adminToken } })).json();
+check('the manager can clear a paused sign-in', cleared.cleared >= 1 && !afterClear.pauses.some((p) => p.username === 'ghost-security-test'), `cleared ${cleared.cleared}`);
+const canTry = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'ghost-security-test', pin: '0000' }) });
+check('after clearing, the door is open again (401, not 429)', canTry.status === 401, `status ${canTry.status}`);
 
 // SQL injection attempt through a search parameter is just a value, not code
 const inj = await fetch(base + "/api/orders?status='%20OR%201=1--", { headers: { 'x-clove-token': cashier } });

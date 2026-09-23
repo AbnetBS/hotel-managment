@@ -53,6 +53,8 @@ function Overview({ onNavigate }) {
         <Stat label="Outstanding at the desk" value={money(outstanding)} icon="receipt" alert={outstanding > 40000} foot="To collect before guests leave" />
       </div>
 
+      <TodayAtAGlance snapshot={snapshot} orders={orders} requests={requests} maintenance={maintenance} onNavigate={onNavigate} />
+
       <div className="grid grid-main" style={{ marginBottom: 18 }}>
         <Card title="Revenue mix · today" subtitle="Posted charges by department">
           <Bars
@@ -401,6 +403,107 @@ function Reports() {
           </table>
         )}
       </Card>
+    </>
+  );
+}
+
+/* ------------------------- today at a glance (owner) --------------------- */
+
+/**
+ * The screen the owner actually opens: arrivals, departures, rooms, restaurant,
+ * money — and the things that need a person right now.
+ */
+function TodayAtAGlance({ snapshot, orders, requests, maintenance, onNavigate }) {
+  if (!snapshot) return null;
+  const openIssues = (maintenance || []).filter((issue) => issue.status !== 'resolved');
+  const ready = orders.filter((order) => order.status === 'ready');
+  const waiting = orders.filter((order) => ['new', 'sent'].includes(order.status));
+
+  const alerts = [
+    requests?.length ? { tone: 'warn', text: `${requests.length} guest registration(s) waiting at the desk`, go: 'rooms' } : null,
+    ready.length ? { tone: 'warn', text: `${ready.length} order(s) ready — a waiter is needed`, go: 'orders' } : null,
+    openIssues.some((issue) => issue.priority === 'high') ? { tone: 'bad', text: `High-priority maintenance open (Room ${openIssues.find((i) => i.priority === 'high')?.room_number})`, go: 'maintenance' } : null,
+    snapshot.housekeepingOpen ? { tone: 'warn', text: `${snapshot.housekeepingOpen} room(s) waiting to be cleaned`, go: 'housekeeping' } : null,
+    snapshot.outstanding > 0 ? { tone: 'info', text: `${money(snapshot.outstanding)} still to collect from guests in house`, go: 'folios' } : null,
+  ].filter(Boolean);
+
+  return (
+    <>
+      <div className="grid grid-4" style={{ marginBottom: 14 }}>
+        <Card title="Today" subtitle="Arrivals & departures" noBody>
+          <div className="glance">
+            <div>
+              <span>Arrivals expected</span>
+              <strong>{snapshot.arrivalsToday}</strong>
+              <small>{snapshot.activeStays} guest(s) in house now</small>
+            </div>
+            <div>
+              <span>Departures expected</span>
+              <strong>{snapshot.departuresToday}</strong>
+              <small>{money(snapshot.outstanding)} open on folios</small>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Rooms" subtitle="Where every key is" noBody>
+          <div className="glance">
+            <div>
+              <span>Occupied</span>
+              <strong>{snapshot.occupied}</strong>
+              <small>{snapshot.occupancy}% occupancy today</small>
+            </div>
+            <div>
+              <span>Free to sell</span>
+              <strong>{snapshot.available}</strong>
+              <small>{snapshot.cleaning} to clean · {snapshot.maintenance} blocked</small>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Restaurant & rooms service" subtitle="Live orders" noBody>
+          <div className="glance">
+            <div>
+              <span>Waiting on a station</span>
+              <strong>{waiting.length}</strong>
+              <small>{orders.filter((o) => o.status === 'sent').length} being cooked</small>
+            </div>
+            <div>
+              <span>Ready to deliver</span>
+              <strong>{ready.length}</strong>
+              <small>{money(orders.filter((o) => o.charged).reduce((sum, o) => sum + o.total, 0))} on room bills today</small>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Money" subtitle="Today" noBody>
+          <div className="glance">
+            <div>
+              <span>Accruing on rooms</span>
+              <strong>{money(snapshot.accruedRoomCharges)}</strong>
+              <small>room bills of guests in house</small>
+            </div>
+            <div>
+              <span>To collect</span>
+              <strong>{money(snapshot.outstanding)}</strong>
+              <small>before guests leave</small>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {alerts.length ? (
+        <div className="alerts-strip">
+          {alerts.map((alert) => (
+            <button key={alert.text} className={`alert-chip ${alert.tone}`} onClick={() => onNavigate?.(alert.go)}>
+              <Icon name="alert" size={14} /> {alert.text}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="alerts-strip">
+          <span className="alert-chip ok"><Icon name="check-circle" size={14} /> Nothing needs you right now — the floor is clear.</span>
+        </div>
+      )}
     </>
   );
 }

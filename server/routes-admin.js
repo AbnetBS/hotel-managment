@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from './auth.js';
 import { hashPin, randomToken } from './password.js';
 import * as repo from './repo.js';
 import { publish } from './realtime.js';
+import { loginPauses, clearLoginPauses } from './security.js';
 
 export const admin = express.Router();
 
@@ -316,6 +317,17 @@ admin.post('/uploads', (req, res) => {
 /* --------------------------------- audit --------------------------------- */
 
 admin.get('/audit', (req, res) => res.json({ log: repo.auditLog({ limit: Number(req.query.limit) || 150 }) }));
+
+/* ------------------------- paused sign-in attempts ----------------------- */
+
+/** Who the sign-in guard paused, so a manager can put people back to work. */
+admin.get('/login-pauses', (req, res) => res.json({ pauses: loginPauses() }));
+
+admin.post('/login-pauses/clear', (req, res) => {
+  const cleared = clearLoginPauses(req.body?.username);
+  audit({ actor: req.user, action: 'login-pause-cleared', entity: 'user', entityId: null, detail: req.body?.username ? `Cleared pause for ${req.body.username}` : `Cleared ${cleared} paused sign-in(s)` });
+  res.json({ ok: true, cleared });
+});
 
 /* ------------------------------ folio edit ------------------------------- */
 

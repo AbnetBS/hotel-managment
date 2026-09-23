@@ -27,11 +27,11 @@ core.post('/auth/login', (req, res) => {
   if (!username || !pin) return res.status(400).json({ error: 'Choose your role, then enter your username and PIN.' });
   const result = login(username, pin, { ip: req.ip });
   if (result.error) {
-    const left = recordLoginFailure(req);
+    const { attemptsLeft, paused } = recordLoginFailure(req);
     return res.status(401).json({
-      error: result.error,
-      attemptsLeft: left > 0 ? left : 0,
-      hint: left <= 3 ? `${Math.max(0, left)} attempt(s) left before this username is paused.` : undefined,
+      error: paused ? `${result.error} This desk is paused for a moment after too many wrong PINs.` : result.error,
+      attemptsLeft,
+      hint: !paused && attemptsLeft <= 2 ? `${attemptsLeft} attempt(s) left before this desk pauses.` : undefined,
     });
   }
   // A correct PIN proves it is staff, not a guesser — the counter starts again.

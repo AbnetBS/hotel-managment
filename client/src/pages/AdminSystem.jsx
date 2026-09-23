@@ -201,10 +201,30 @@ function SettingsPanel() {
 /* --------------------------------- audit --------------------------------- */
 
 function AuditLog() {
+  const { toast } = useApp();
   const [log, setLog] = useState([]);
-  useEffect(() => {
+  const [pauses, setPauses] = useState([]);
+
+  const load = () => {
     api.get('/admin/audit?limit=200').then((data) => setLog(data.log)).catch(() => setLog([]));
+    api.get('/admin/login-pauses').then((data) => setPauses(data.pauses)).catch(() => setPauses([]));
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(() => api.get('/admin/login-pauses').then((data) => setPauses(data.pauses)).catch(() => {}), 15000);
+    return () => clearInterval(timer);
   }, []);
+
+  const unblock = async (username) => {
+    try {
+      const result = await api.post('/admin/login-pauses/clear', username ? { username } : {});
+      toast(result.cleared ? `${result.cleared} sign-in pause(s) cleared.` : 'Nothing was paused.', 'info');
+      load();
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  };
 
   return (
     <>
@@ -215,6 +235,22 @@ function AuditLog() {
           <p className="page-desc">Every check-in, payment, price change and staff change is written down with who did it and when.</p>
         </div>
       </div>
+
+      {pauses.length ? (
+        <div className="card" style={{ marginBottom: 18, padding: 14, borderColor: '#f0cdc4' }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <strong>{pauses.length} sign-in{s.pauses === 1 ? '' : 's'} paused after wrong PINs</strong>
+              <div className="muted" style={{ fontSize: 12 }}>
+                {pauses.map((pause) => `${pause.username} (${pause.secondsLeft}s)`).join(' · ')} — clear it when the person is standing in front of you.
+              </div>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => unblock()}>
+              <Icon name="key-2" size={13} /> Clear all
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-3" style={{ marginBottom: 18 }}>
         <Stat label="Entries" value={log.length} icon="list" foot="Most recent 200" />

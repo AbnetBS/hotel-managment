@@ -440,3 +440,16 @@ tbody tr:hover { background: #fafcfb; }
 .center-load { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 80px 0; color: var(--ink-faint); }
 .spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--mint); border-top-color: var(--teal); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* --------------------------- today at a glance --------------------------- */
+.glance { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; }
+.glance > div { display: flex; flex-direction: column; gap: 2px; }
+.glance span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--ink-faint); font-weight: 700; }
+.glance strong { font-size: 24px; letter-spacing: -.6px; }
+.glance small { color: var(--ink-faint); font-size: 11px; }
+.alerts-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.alert-chip { display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.alert-chip.bad { border-color: #f0cdc4; background: var(--red-soft); color: #a83c31; }
+.alert-chip.warn { border-color: #f0e0bd; background: var(--amber-soft); color: #8d6220; }
+.alert-chip.info { border-color: var(--mint); background: #f2fbf8; color: var(--teal-dark); }
+.alert-chip.ok { cursor: default; border-color: #cfe9dd; background: var(--green-soft); color: #1f7a52; }

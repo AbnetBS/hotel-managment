@@ -173,6 +173,9 @@ scripts/           the three verification suites
 
 ## Notes
 
+* Wrong PINs are counted per desk and username with a growing pause (30 s → 5 min) — and
+  the manager can clear a pause instantly from **Admin → Audit log**, so a mischievous
+  guest can never lock a cashier out for long.
 * Login is username + PIN (hashed, scrypt). Tokens last 12 hours and are kept in memory,
   so restarting the API signs everybody out.
 * Photos are uploaded to `server/uploads/` and served from `/uploads`.
