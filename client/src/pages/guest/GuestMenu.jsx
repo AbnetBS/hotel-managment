@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { api } from '../../lib/api.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, clientRef } from '../../lib/api.js';
 import { Icon } from '../../lib/icons.jsx';
 import { money } from '../../lib/format.js';
 
@@ -14,6 +14,7 @@ export default function GuestMenu({ token }) {
   const [sent, setSent] = useState(null);
   const [busy, setBusy] = useState(false);
   const [bill, setBill] = useState(null);
+  const ref = useRef(''); // one reference per attempt: retries cannot double-order
 
   useEffect(() => {
     api.public
@@ -63,11 +64,14 @@ export default function GuestMenu({ token }) {
 
   const send = async () => {
     setBusy(true);
+    if (!ref.current) ref.current = clientRef('qr-order');
     try {
       const result = await api.public.post(`/public/order/${token}`, {
         items: cart.map((line) => ({ menu_item_id: line.id, qty: line.qty })),
         note,
+        client_ref: ref.current,
       });
+      ref.current = ''; // next order is a new one
       setSent(result);
       setCart([]);
       setNote('');

@@ -90,5 +90,29 @@ const second2 = await api(cashier, '/reservations', { method: 'POST', body: JSON
 check('a second booking on the same room and dates is refused', second2.status === 409,
   second2.body.error ? `${second2.body.error} alternatives: ${(second2.body.alternatives || []).join(', ') || 'none'}` : `status ${second2.status}`);
 
+
+/* ------------------- duplicate protection (dropped connection) ------------- */
+
+const dupRoom = (await api(cashier, '/rooms')).body.rooms.find((r) => r.stay);
+const dupRef = 'test-ref-' + Date.now();
+
+// the same payment sent twice (the tablet retried) lands once
+const p1 = await api(cashier, `/stays/${dupRoom.stay.id}/payment`, { method: 'POST', body: JSON.stringify({ amount: 100, method: 'Cash', client_ref: dupRef }) });
+const p2 = await api(cashier, `/stays/${dupRoom.stay.id}/payment`, { method: 'POST', body: JSON.stringify({ amount: 100, method: 'Cash', client_ref: dupRef }) });
+check('a retried payment is stored once', p1.status === 200 && p2.status === 200 && p2.body.duplicate === true, `second reply duplicate=${p2.body.duplicate}`);
+
+// the same guest order sent twice (weak Wi-Fi) is one order
+const dupMenu = (await api(cashier, '/bootstrap')).body.menu.items.find((i) => i.station === 'kitchen');
+const orderRef = 'test-order-' + Date.now();
+const o1 = await api(cashier, '/orders', { method: 'POST', body: JSON.stringify({ roomId: dupRoom.id, channel: 'outdoor', client_ref: orderRef, items: [{ menu_item_id: dupMenu.id, qty: 1 }] }) });
+const o2 = await api(cashier, '/orders', { method: 'POST', body: JSON.stringify({ roomId: dupRoom.id, channel: 'outdoor', client_ref: orderRef, items: [{ menu_item_id: dupMenu.id, qty: 1 }] }) });
+check('a double-tapped order is created once', o1.status === 200 && o1.body.order.code === o2.body.order.code, `${o1.body.order?.code} = ${o2.body.order?.code}`);
+
+// paying and releasing twice is refused the second time
+const checkoutRef = 'test-checkout-' + Date.now();
+const c1 = await api(cashier, `/stays/${dupRoom.stay.id}/checkout`, { method: 'POST', body: JSON.stringify({ client_ref: checkoutRef, release: true, payments: [] }) });
+const c2 = await api(cashier, `/stays/${dupRoom.stay.id}/checkout`, { method: 'POST', body: JSON.stringify({ client_ref: checkoutRef, release: true, payments: [] }) });
+check('checking out twice is safe', c1.status === 200 && c2.status === 200 && c2.body.duplicate === true, `second reply duplicate=${c2.body.duplicate}`);
+
 console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

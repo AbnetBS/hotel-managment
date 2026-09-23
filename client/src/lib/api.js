@@ -75,3 +75,13 @@ export async function uploadPhoto(file) {
   const dataUrl = await fileToDataUrl(file);
   return api.post('/admin/uploads', { data_url: dataUrl, filename: file.name });
 }
+
+/**
+ * One reference per submit attempt, reused when the same form is retried.
+ * The server ignores a second request that carries a reference it has already
+ * seen, so a dropped connection or a double tap can never charge twice.
+ */
+export function clientRef(scope) {
+  const random = Math.random().toString(36).slice(2, 10);
+  return `${scope}-${Date.now().toString(36)}-${random}`;
+}

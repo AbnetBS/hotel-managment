@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { api } from '../lib/api.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, clientRef } from '../lib/api.js';
 import { useApp, useNow, useTopic } from '../lib/store.jsx';
 import { computeRoomCharge, BILLING_MODES } from '../../../shared/billing.js';
 import { money, formatElapsed, formatCountdown, initials, dateTimeOf, toLocalInput, fromLocalInput } from '../lib/format.js';
@@ -800,13 +800,15 @@ export function PaymentModal({ stayId, onClose, onDone }) {
   const [method, setMethod] = useState('Cash');
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
+  const ref = useRef('');
 
   const submit = async () => {
     setBusy(true);
+    if (!ref.current) ref.current = clientRef('payment');
     try {
-      await api.post(`/stays/${stayId}/payment`, { amount: Number(amount), method, reference });
-      toast(`${money(Number(amount))} received (${method}).`);
-      onDone?.();
+      const result = await api.post(`/stays/${stayId}/payment`, { amount: Number(amount), method, reference, client_ref: ref.current });
+      ref.current = '';
+      toast(result.duplicate ? 'That payment was already saved.' : `${money(Number(amount))} received (${method}).`);
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -944,6 +946,7 @@ function ExtendModal({ folio, onClose, onDone }) {
 
 export function CheckoutModal({ folio, totals, onClose, onDone }) {
   const { toast, loadRooms, loadStays } = useApp();
+  const checkoutRef = useRef(''); // retry after a dropout must not release twice
   const [units, setUnits] = useState(folio?.live?.billedUnits || 1);
   const [discount, setDiscount] = useState('');
   const [payments, setPayments] = useState([{ amount: String(Math.max(0, totals?.balance || 0)), method: 'Cash' }]);
@@ -960,17 +963,22 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
 
   const submit = async () => {
     setBusy(true);
+    if (!checkoutRef.current) checkoutRef.current = clientRef('checkout');
     try {
       const result = await api.post(`/stays/${folio.id}/checkout`, {
         unitsOverride: Number(units),
         discount: discountValue,
         payments: payments.filter((payment) => Number(payment.amount) > 0),
         release,
+        client_ref: checkoutRef.current,
       });
+      checkoutRef.current = '';
       toast(
-        release
-          ? `Room ${result.room} released. Housekeeping was told to turn it around.`
-          : `Bill closed for Room ${result.room}. The room is still marked as occupied.`,
+        result.duplicate
+          ? `Room ${result.room} was already released.`
+          : release
+            ? `Room ${result.room} released. Housekeeping was told to turn it around.`
+            : `Bill closed for Room ${result.room}. The room is still marked as occupied.`,
       );
       await loadRooms();
       await loadStays();

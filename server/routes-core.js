@@ -127,7 +127,7 @@ core.patch('/stays/:id', requireAuth, requireRole('cashier', 'manager', 'admin')
 });
 
 core.post('/stays/:id/payment', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  fail(res, actions.takePayment({ stayId: req.params.id, ...req.body, actor: req.user }));
+  fail(res, actions.takePayment({ stayId: req.params.id, ...req.body, clientRef: req.body?.client_ref, actor: req.user }));
 });
 
 core.post('/stays/:id/charge', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
@@ -138,7 +138,7 @@ core.post('/stays/:id/charge', requireAuth, requireRole('cashier', 'manager', 'a
 });
 
 core.post('/stays/:id/checkout', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  const result = actions.checkOutStay({ stayId: req.params.id, ...req.body, actor: req.user });
+  const result = actions.checkOutStay({ stayId: req.params.id, ...req.body, clientRef: req.body?.client_ref, actor: req.user });
   if (result.error) return res.status(400).json(result);
   res.json({ ...result, folio: repo.stayView(req.params.id) });
 });
@@ -178,7 +178,7 @@ core.get('/orders/:id', requireAuth, (req, res) => {
 });
 
 core.post('/orders', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  const result = actions.createOrder({ ...req.body, actor: req.user });
+  const result = actions.createOrder({ ...req.body, clientRef: req.body?.client_ref, actor: req.user });
   if (result.error) return res.status(400).json(result);
   res.json(result);
 });
@@ -475,11 +475,15 @@ core.post('/public/order/:token', (req, res) => {
   const stay = actions.activeStayForRoom(room.id);
   if (!stay) return res.status(400).json({ error: 'This room is not checked in yet. Please order at the reception desk.' });
   const result = actions.createOrder({
-    stayId: stay.id, roomId: room.id, channel: 'qr', note: req.body?.note,
+    stayId: stay.id, roomId: room.id, channel: 'qr', note: req.body?.note, clientRef: req.body?.client_ref,
     items: (req.body?.items || []).map((i) => ({ menu_item_id: i.menu_item_id, qty: i.qty, note: i.note })),
   });
   if (result.error) return res.status(400).json(result);
-  res.json({ order: { code: result.order.code, total: result.order.total, items: result.order.items.length }, message: 'Your order was sent to the reception desk.' });
+  res.json({
+    order: { code: result.order.code, total: result.order.total, items: result.order.items.length },
+    duplicate: result.duplicate || undefined,
+    message: 'Your order was sent to the reception desk.',
+  });
 });
 
 core.post('/public/register/:token', (req, res) => {

@@ -110,34 +110,48 @@ export function checkInRoom({ roomId, guest: guestFields, guestId, billingMode, 
   return { stayId: sid, guestId: guest.id, room: room.number };
 }
 
-export function postFolioItem({ stayId, kind, description, qty = 1, unitPrice = 0, amount, station, orderId, method, reference, actor, at }) {
+export function postFolioItem({ stayId, kind, description, qty = 1, unitPrice = 0, amount, station, orderId, method, reference, clientRef, actor, at }) {
+  // Same device reference already posted? Return the original line, never a second one.
+  if (clientRef) {
+    const seen = db.prepare('SELECT id FROM folio_items WHERE client_ref = ?').get(clientRef);
+    if (seen) return seen.id;
+  }
   const value = amount !== undefined ? Number(amount) : Number(qty) * Number(unitPrice);
   const itemId = id('fi');
   const when = at || nowIso();
-  db.prepare(`INSERT INTO folio_items (id, stay_id, kind, description, qty, unit_price, amount, station, order_id, method, reference, bill_date, void, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
+  db.prepare(`INSERT INTO folio_items (id, stay_id, kind, description, qty, unit_price, amount, station, order_id, method, reference, client_ref, bill_date, void, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
     itemId, stayId, kind, description, Number(qty) || 1, Number(unitPrice) || 0, value, station || null, orderId || null,
-    method || null, reference || null, when.slice(0, 10), when, actor?.id || null,
+    method || null, reference || null, clientRef || null, when.slice(0, 10), when, actor?.id || null,
   );
   return itemId;
 }
 
-export function takePayment({ stayId, amount, method, reference, actor }) {
+export function takePayment({ stayId, amount, method, reference, clientRef, actor }) {
   const value = Math.abs(Number(amount) || 0);
   if (!value) return { error: 'Enter the amount received.' };
+  if (clientRef && db.prepare('SELECT id FROM folio_items WHERE client_ref = ?').get(clientRef)) {
+    // The device retried after a dropped connection: the money is already in.
+    return { ok: true, duplicate: true };
+  }
   postFolioItem({
-    stayId, kind: 'payment', method: method || 'Cash', reference, actor,
+    stayId, kind: 'payment', method: method || 'Cash', reference, clientRef, actor,
     description: `Payment · ${method || 'Cash'}${reference ? ` · ${reference}` : ''}`, amount: -value,
   });
-  audit({ actor, action: 'payment', entity: 'stay', entityId: stayId, detail: `${value} via ${method || 'Cash'}` });
+  audit({ actor, action: 'payment', entity: 'stay', entityId: stayId, detail: `${value} via ${method || 'Cash'}${reference ? ` · ${reference}` : ''}` });
   publish(['folios', 'stays', 'rooms', 'reports']);
   return { ok: true };
 }
 
 /** Paid & release: freeze the room charge, take the money, free the room, notify housekeeping. */
-export function checkOutStay({ stayId, unitsOverride, discount, payments = [], release = true, note, actor }) {
+export function checkOutStay({ stayId, unitsOverride, discount, payments = [], release = true, note, clientRef, actor }) {
   const stay = db.prepare('SELECT * FROM stays WHERE id = ?').get(stayId);
-  if (!stay || stay.status !== 'active') return { error: 'This stay is not active.' };
+  if (!stay) return { error: 'Stay not found.' };
+  if (stay.status !== 'active') {
+    // Already released (the cashier's tablet retried): report the same numbers.
+    const items = db.prepare('SELECT * FROM folio_items WHERE stay_id = ? AND void = 0').all(stayId);
+    return { ok: true, duplicate: true, totals: folioTotals(stay, items), room: roomById(stay.room_id)?.number };
+  }
   const room = roomById(stay.room_id);
 
   const checkoutAt = nowIso();
@@ -148,7 +162,7 @@ export function checkOutStay({ stayId, unitsOverride, discount, payments = [], r
   if (hasPostedRoom) {
     db.prepare("UPDATE folio_items SET description = ?, amount = ? WHERE stay_id = ? AND kind = 'room' AND void = 0").run(roomLine, charge.amount, stayId);
   } else {
-    postFolioItem({ stayId, kind: 'room', description: roomLine, amount: charge.amount, actor });
+    postFolioItem({ stayId, kind: 'room', description: roomLine, amount: charge.amount, clientRef: clientRef ? `${clientRef}:room` : undefined, actor });
   }
 
   const discountValue = Math.abs(Number(discount) || 0);
@@ -156,14 +170,15 @@ export function checkOutStay({ stayId, unitsOverride, discount, payments = [], r
     postFolioItem({ stayId, kind: 'discount', description: 'Discount · approved at checkout', amount: -discountValue, actor });
   }
 
-  for (const payment of payments) {
+  payments.forEach((payment, index) => {
     const value = Math.abs(Number(payment.amount) || 0);
-    if (!value) continue;
+    if (!value) return;
     postFolioItem({
       stayId, kind: 'payment', method: payment.method || 'Cash', reference: payment.reference, actor,
+      clientRef: clientRef ? `${clientRef}:p${index}` : undefined,
       description: `Settle bill · ${payment.method || 'Cash'}`, amount: -value,
     });
-  }
+  });
 
   db.prepare(`UPDATE stays SET status = 'checked_out', check_out_at = ?, units_override = ?, discount = discount + ?, updated_at = ? WHERE id = ?`)
     .run(checkoutAt, charge.billedUnits, discountValue, checkoutAt, stayId);
@@ -187,7 +202,12 @@ export function checkOutStay({ stayId, unitsOverride, discount, payments = [], r
 
 /* -------------------------------- orders ---------------------------------- */
 
-export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], note, guestName, actor }) {
+export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], note, guestName, clientRef, actor }) {
+  if (clientRef) {
+    const seen = db.prepare('SELECT * FROM orders WHERE client_ref = ?').get(clientRef);
+    // The guest's phone sent this already (bad signal, double tap): send back the same order.
+    if (seen) return { order: orderView(seen.id), duplicate: true };
+  }
   const menuData = menu();
   const lines = [];
   for (const raw of items) {
@@ -217,11 +237,11 @@ export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], n
   const createdAt = nowIso();
   const guestRow = stay ? db.prepare('SELECT * FROM guests WHERE id = ?').get(stay.guest_id) : null;
 
-  db.prepare(`INSERT INTO orders (id, code, room_id, stay_id, guest_name, channel, status, note, total, call_confirmed, charged, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, 0, 0, ?, ?)`).run(
+  db.prepare(`INSERT INTO orders (id, code, room_id, stay_id, guest_name, channel, status, note, total, call_confirmed, charged, client_ref, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, 0, 0, ?, ?, ?)`).run(
     orderId, code, room?.id || null, stay?.id || null,
     guestName || guestRow?.full_name || (isCounter ? 'Walk-in guest' : 'In-house guest'),
-    channel, note || null, total, createdAt, actor?.id || 'guest-qr',
+    channel, note || null, total, clientRef || null, createdAt, actor?.id || 'guest-qr',
   );
 
   const insertItem = db.prepare(`INSERT INTO order_items (id, order_id, menu_item_id, name, name_am, qty, unit_price, station, status, note)

@@ -90,6 +90,13 @@ drop “Passport” if you never take foreign guests.
 Nothing changes these by hand: checking a guest out turns the room purple, starting a
 clean turns it blue, finishing turns it green (or inspected).
 
+### Nothing is charged twice
+
+Hotel Wi-Fi drops. Every risky submit — a payment, a check-out, a guest order — carries a
+reference made by the device, and the database refuses to store the same reference twice.
+If the tablet retries after a timeout, or a guest taps **Send order** twice, the system
+answers with the original receipt instead of a second charge.
+
 ### Money
 
 Three ways to sell a room, set per room type (and overridable per room):

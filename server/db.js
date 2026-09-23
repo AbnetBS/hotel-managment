@@ -295,6 +295,15 @@ function ensureColumn(table, column, definition) {
 ensureColumn('rooms', 'cleaned_at', 'TEXT');
 ensureColumn('rooms', 'cleaned_by', 'TEXT');
 ensureColumn('housekeeping_tasks', 'started_at', 'TEXT');
+// Duplicate protection: a payment or an order carries the id the device made up,
+// so a retry after a dropped connection can never land twice.
+ensureColumn('folio_items', 'client_ref', 'TEXT');
+ensureColumn('orders', 'client_ref', 'TEXT');
+
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_folio_client_ref ON folio_items(client_ref) WHERE client_ref IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_client_ref ON orders(client_ref) WHERE client_ref IS NOT NULL;
+`);
 
 /* ---------- small helpers ---------- */
 
