@@ -1,0 +1,463 @@
+import { db, audit, id, nowIso } from './db.js';
+import { computeRoomCharge, folioTotals } from '../shared/billing.js';
+import { logEvent, nextOrderCode, orderView, menu } from './repo.js';
+import { publish, publishToRoles } from './realtime.js';
+
+const STAY_CODE_START = 4101;
+
+export function nextStayCode() {
+  const row = db.prepare("SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) AS max FROM stays WHERE code LIKE 'ST-%'").get();
+  const base = row?.max && row.max >= STAY_CODE_START ? row.max : STAY_CODE_START;
+  return `ST-${base + 1}`;
+}
+
+export function roomById(roomId) {
+  return db.prepare('SELECT * FROM rooms WHERE id = ?').get(roomId);
+}
+
+export function activeStayForRoom(roomId) {
+  return db.prepare("SELECT * FROM stays WHERE room_id = ? AND status = 'active' ORDER BY check_in_at DESC").get(roomId);
+}
+
+export function rateForRoom(type, billingMode) {
+  if (!type) return 0;
+  if (billingMode === 'hourly') return type.hourly_rate || Math.round(type.nightly_rate / 6);
+  if (billingMode === 'dayuse') return type.dayuse_rate || Math.round(type.nightly_rate / 1.5);
+  return type.nightly_rate || 0;
+}
+
+/** Find an existing guest with the same phone (or name) so we never double-file people. */
+function findGuestByPhone(phone, fullName) {
+  if (phone) {
+    const row = db.prepare('SELECT * FROM guests WHERE phone = ?').get(String(phone).trim());
+    if (row) return row;
+  }
+  if (!fullName) return null;
+  return db.prepare('SELECT * FROM guests WHERE lower(full_name) = lower(?)').get(String(fullName).trim()) || null;
+}
+
+export function createGuest(fields, { source = 'cashier', actor } = {}) {
+  const flat = { ...fields };
+  const known = ['full_name', 'phone', 'email', 'nationality', 'id_type', 'id_number'];
+  const extra = {};
+  for (const [key, value] of Object.entries(flat)) {
+    if (!known.includes(key) && value !== '' && value != null) extra[key] = value;
+  }
+  const gid = id('g');
+  db.prepare(`INSERT INTO guests (id, full_name, phone, email, nationality, id_type, id_number, extra, created_at, created_by, source)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    gid,
+    String(flat.full_name || 'Walk-in guest').trim(),
+    flat.phone || null,
+    flat.email || null,
+    flat.nationality || null,
+    flat.id_type || null,
+    flat.id_number || null,
+    JSON.stringify(extra),
+    nowIso(),
+    actor?.id || null,
+    source,
+  );
+  return { id: gid, ...flat, extra };
+}
+
+/** Check a guest into a room (cashier, or an approved QR registration). */
+export function checkInRoom({ roomId, guest: guestFields, guestId, billingMode, rate, deposit, method, expectedOutAt, adults, children, note, source = 'cashier', actor }) {
+  const room = roomById(roomId);
+  if (!room) return { error: 'Room not found.' };
+  if (activeStayForRoom(roomId)) return { error: `Room ${room.number} already has an active guest.` };
+  if (['maintenance', 'blocked'].includes(room.status)) return { error: `Room ${room.number} is blocked for ${room.status}. Release it first.` };
+
+  const type = db.prepare('SELECT * FROM room_types WHERE id = ?').get(room.room_type_id);
+  const mode = billingMode || room.billing_mode || type?.billing_mode || 'nightly';
+  const finalRate = Number(rate) || rateForRoom(type, mode);
+  const graceSetting = db.prepare("SELECT value FROM settings WHERE key = 'grace_hours'").get();
+  const graceHours = graceSetting ? Number(graceSetting.value) : 1;
+
+  let guest = guestId ? db.prepare('SELECT * FROM guests WHERE id = ?').get(guestId) : null;
+  if (!guest && guestFields) {
+    guest = findGuestByPhone(guestFields.phone, guestFields.full_name);
+    if (guest) {
+      db.prepare('UPDATE guests SET full_name = COALESCE(?, full_name), email = COALESCE(?, email), nationality = COALESCE(?, nationality) WHERE id = ?')
+        .run(guestFields.full_name || null, guestFields.email || null, guestFields.nationality || null, guest.id);
+    } else {
+      guest = createGuest(guestFields, { source, actor });
+    }
+  }
+  if (!guest) return { error: 'Guest details are required.' };
+
+  const checkInAt = nowIso();
+  const defaultOutHours = mode === 'nightly' ? 24 : mode === 'dayuse' ? (type?.dayuse_hours || 3) : 1;
+  const sid = id('stay');
+  db.prepare(`INSERT INTO stays (id, code, guest_id, room_id, billing_mode, rate, dayuse_hours, grace_hours, check_in_at, expected_out_at,
+      status, discount, adults, children, source, note, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?, ?, ?, ?, ?)`).run(
+    sid, nextStayCode(), guest.id, roomId, mode, finalRate, type?.dayuse_hours || 3, graceHours, checkInAt,
+    expectedOutAt || new Date(Date.now() + defaultOutHours * 3600 * 1000).toISOString(),
+    Number(adults) || 1, Number(children) || 0, source, note || null, actor?.id || null, checkInAt, checkInAt,
+  );
+
+  if (Number(deposit) > 0) {
+    postFolioItem({
+      stayId: sid, kind: 'payment', description: `Deposit · ${method || 'Cash'}`,
+      amount: -Math.abs(Number(deposit)), method: method || 'Cash', actor,
+    });
+  }
+
+  db.prepare('UPDATE rooms SET status = ?, block_reason = NULL WHERE id = ?').run('occupied', roomId);
+  audit({ actor, action: 'check-in', entity: 'stay', entityId: sid, detail: `${guest.full_name} → Room ${room.number} (${mode} @ ${finalRate})` });
+  publish(['rooms', 'stays', 'folios', 'reports']);
+  return { stayId: sid, guestId: guest.id, room: room.number };
+}
+
+export function postFolioItem({ stayId, kind, description, qty = 1, unitPrice = 0, amount, station, orderId, method, reference, actor, at }) {
+  const value = amount !== undefined ? Number(amount) : Number(qty) * Number(unitPrice);
+  const itemId = id('fi');
+  const when = at || nowIso();
+  db.prepare(`INSERT INTO folio_items (id, stay_id, kind, description, qty, unit_price, amount, station, order_id, method, reference, bill_date, void, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
+    itemId, stayId, kind, description, Number(qty) || 1, Number(unitPrice) || 0, value, station || null, orderId || null,
+    method || null, reference || null, when.slice(0, 10), when, actor?.id || null,
+  );
+  return itemId;
+}
+
+export function takePayment({ stayId, amount, method, reference, actor }) {
+  const value = Math.abs(Number(amount) || 0);
+  if (!value) return { error: 'Enter the amount received.' };
+  postFolioItem({
+    stayId, kind: 'payment', method: method || 'Cash', reference, actor,
+    description: `Payment · ${method || 'Cash'}${reference ? ` · ${reference}` : ''}`, amount: -value,
+  });
+  audit({ actor, action: 'payment', entity: 'stay', entityId: stayId, detail: `${value} via ${method || 'Cash'}` });
+  publish(['folios', 'stays', 'rooms', 'reports']);
+  return { ok: true };
+}
+
+/** Paid & release: freeze the room charge, take the money, free the room, notify housekeeping. */
+export function checkOutStay({ stayId, unitsOverride, discount, payments = [], release = true, note, actor }) {
+  const stay = db.prepare('SELECT * FROM stays WHERE id = ?').get(stayId);
+  if (!stay || stay.status !== 'active') return { error: 'This stay is not active.' };
+  const room = roomById(stay.room_id);
+
+  const checkoutAt = nowIso();
+  const charge = computeRoomCharge({ ...stay, units_override: unitsOverride ?? stay.units_override, check_out_at: checkoutAt });
+
+  const hasPostedRoom = db.prepare("SELECT COUNT(*) AS n FROM folio_items WHERE stay_id = ? AND kind = 'room' AND void = 0").get(stayId).n > 0;
+  const roomLine = `Room charge · ${charge.billedUnits} ${charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural} @ ${charge.rate}`;
+  if (hasPostedRoom) {
+    db.prepare("UPDATE folio_items SET description = ?, amount = ? WHERE stay_id = ? AND kind = 'room' AND void = 0").run(roomLine, charge.amount, stayId);
+  } else {
+    postFolioItem({ stayId, kind: 'room', description: roomLine, amount: charge.amount, actor });
+  }
+
+  const discountValue = Math.abs(Number(discount) || 0);
+  if (discountValue > 0) {
+    postFolioItem({ stayId, kind: 'discount', description: 'Discount · approved at checkout', amount: -discountValue, actor });
+  }
+
+  for (const payment of payments) {
+    const value = Math.abs(Number(payment.amount) || 0);
+    if (!value) continue;
+    postFolioItem({
+      stayId, kind: 'payment', method: payment.method || 'Cash', reference: payment.reference, actor,
+      description: `Settle bill · ${payment.method || 'Cash'}`, amount: -value,
+    });
+  }
+
+  db.prepare(`UPDATE stays SET status = 'checked_out', check_out_at = ?, units_override = ?, discount = discount + ?, updated_at = ? WHERE id = ?`)
+    .run(checkoutAt, charge.billedUnits, discountValue, checkoutAt, stayId);
+
+  if (release && room) {
+    db.prepare('UPDATE rooms SET status = ? WHERE id = ?').run('dirty', room.id);
+    db.prepare(`INSERT INTO housekeeping_tasks (id, room_id, type, assignee, priority, status, note, created_at)
+                VALUES (?, ?, 'Turnover clean · checkout', 'Unassigned', 'high', 'pending', ?, ?)`)
+      .run(id('hk'), room.id, note || `Guest left at ${new Date(checkoutAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, checkoutAt);
+  }
+
+  const items = db.prepare('SELECT * FROM folio_items WHERE stay_id = ? AND void = 0').all(stayId);
+  const totals = folioTotals({ ...stay, check_out_at: checkoutAt, units_override: charge.billedUnits }, items);
+  audit({ actor, action: 'check-out', entity: 'stay', entityId: stayId, detail: `Room ${room?.number} released · total ${totals.total} · balance ${totals.balance}` });
+  publish(['rooms', 'stays', 'folios', 'housekeeping', 'reports']);
+  return { ok: true, totals, units: charge.billedUnits, room: room?.number };
+}
+
+/* -------------------------------- orders ---------------------------------- */
+
+export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], note, guestName, actor }) {
+  const menuData = menu();
+  const lines = [];
+  for (const raw of items) {
+    const menuItem = menuData.items.find((m) => m.id === raw.menu_item_id);
+    if (!menuItem) continue;
+    const qty = Math.max(1, Number(raw.qty) || 1);
+    lines.push({
+      menu_item_id: menuItem.id, name: menuItem.name, name_am: menuItem.name_am, qty,
+      unit_price: Number(raw.unit_price ?? menuItem.price), station: menuItem.station, note: raw.note || null,
+    });
+  }
+  if (!lines.length) return { error: 'Add at least one item.' };
+
+  let stay = stayId ? db.prepare('SELECT * FROM stays WHERE id = ?').get(stayId) : null;
+  let room = roomId ? roomById(roomId) : null;
+  if (!stay && room) stay = activeStayForRoom(room.id);
+  if (!room && stay) room = roomById(stay.room_id);
+
+  const isCounter = channel === 'counter';
+  if (!isCounter && !stay) {
+    return { error: 'That room has no active guest. Check the guest in first, or take a walk-in order.' };
+  }
+
+  const total = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0);
+  const orderId = id('o');
+  const code = nextOrderCode();
+  const createdAt = nowIso();
+  const guestRow = stay ? db.prepare('SELECT * FROM guests WHERE id = ?').get(stay.guest_id) : null;
+
+  db.prepare(`INSERT INTO orders (id, code, room_id, stay_id, guest_name, channel, status, note, total, call_confirmed, charged, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, 0, 0, ?, ?)`).run(
+    orderId, code, room?.id || null, stay?.id || null,
+    guestName || guestRow?.full_name || (isCounter ? 'Walk-in guest' : 'In-house guest'),
+    channel, note || null, total, createdAt, actor?.id || 'guest-qr',
+  );
+
+  const insertItem = db.prepare(`INSERT INTO order_items (id, order_id, menu_item_id, name, name_am, qty, unit_price, station, status, note)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`);
+  for (const line of lines) {
+    insertItem.run(id('oi'), orderId, line.menu_item_id, line.name, line.name_am, line.qty, line.unit_price, line.station, line.note);
+  }
+
+  const channelLabel = channel === 'qr' ? 'QR order from room' : channel === 'outdoor' ? 'Phone / room-service order' : 'Counter order';
+  logEvent(orderId, actor?.name || (channel === 'qr' ? `Room ${room?.number} guest (QR)` : 'Cashier'), 'created', `${channelLabel} · #${code}`);
+
+  const view = orderView(orderId);
+  publish(['orders', 'rooms']);
+  publishToRoles(['cashier', 'admin', 'manager'], {
+    type: 'alert',
+    kind: 'order.new',
+    title: room ? `New order · Room ${room.number}` : 'New counter order',
+    order: view,
+    at: Date.now(),
+  });
+  return { order: view };
+}
+
+export function acceptOrder({ orderId, callConfirmed, actor }) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return { error: 'Order not found.' };
+  if (order.status !== 'new') return { error: `Order #${order.code} was already accepted.` };
+  db.prepare("UPDATE orders SET status = 'accepted', accepted_at = ?, accepted_by = ?, call_confirmed = ? WHERE id = ?")
+    .run(nowIso(), actor?.id || null, callConfirmed ? 1 : 0, orderId);
+  logEvent(orderId, actor?.name || 'Cashier', 'accepted', callConfirmed ? 'Accepted · guest confirmed by phone' : 'Accepted at the cashier desk');
+  publish(['orders']);
+  return { order: orderView(orderId) };
+}
+
+export function confirmCall({ orderId, actor }) {
+  db.prepare('UPDATE orders SET call_confirmed = 1 WHERE id = ?').run(orderId);
+  logEvent(orderId, actor?.name || 'Cashier', 'confirmed', 'Guest confirmed the order by phone');
+  publish(['orders']);
+  return { order: orderView(orderId) };
+}
+
+export function sendOrderToStations({ orderId, actor }) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return { error: 'Order not found.' };
+  if (['sent', 'ready', 'delivering', 'delivered', 'completed'].includes(order.status)) {
+    return { error: `Order #${order.code} is already with the stations.` };
+  }
+  if (order.status === 'new') return { error: 'Accept the order first, then confirm it with the guest.' };
+  db.prepare("UPDATE orders SET status = 'sent', sent_at = ? WHERE id = ?").run(nowIso(), orderId);
+  const stations = [...new Set(db.prepare('SELECT station FROM order_items WHERE order_id = ?').all(orderId).map((r) => r.station))].filter(Boolean);
+  logEvent(orderId, actor?.name || 'Cashier', 'sent', `Sent to ${stations.join(', ')}`);
+  const view = orderView(orderId);
+  publish(['orders']);
+  publishToRoles(stations, { type: 'alert', kind: 'order.sent', title: `New ticket · order #${order.code}`, order: view, at: Date.now() });
+  return { order: view };
+}
+
+export function acceptOrderItem({ itemId, actor }) {
+  const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(itemId);
+  if (!item) return { error: 'Item not found.' };
+  db.prepare("UPDATE order_items SET status = 'cooking', accepted_at = COALESCE(accepted_at, ?) WHERE id = ?").run(nowIso(), itemId);
+  logEvent(item.order_id, actor?.name || 'Station', 'item-accepted', `${item.name} × ${item.qty} accepted`);
+  publish(['orders']);
+  return { order: orderView(item.order_id) };
+}
+
+export function completeOrderItem({ itemId, actor }) {
+  const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(itemId);
+  if (!item) return { error: 'Item not found.' };
+  db.prepare("UPDATE order_items SET status = 'done', done_at = ? WHERE id = ?").run(nowIso(), itemId);
+  logEvent(item.order_id, actor?.name || 'Station', 'item-done', `${item.name} × ${item.qty} ready`);
+  let order = orderView(item.order_id);
+  if (order?.allDone && !['ready', 'delivering', 'delivered', 'completed'].includes(order.status)) {
+    db.prepare("UPDATE orders SET status = 'ready', ready_at = ? WHERE id = ?").run(nowIso(), item.order_id);
+    logEvent(item.order_id, 'System', 'ready', 'All items ready — cashier can send the waiter');
+    order = orderView(item.order_id);
+    publishToRoles(['cashier', 'waiter', 'admin', 'manager'], {
+      type: 'alert', kind: 'order.ready', title: `Ready to deliver · order #${order.code} · Room ${order.room_number}`, order, at: Date.now(),
+    });
+  }
+  publish(['orders']);
+  return { order };
+}
+
+export function sendWaiter({ orderId, actor }) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return { error: 'Order not found.' };
+  if (order.status !== 'ready') return { error: `Order #${order.code} is not ready for delivery yet.` };
+  db.prepare("UPDATE orders SET status = 'delivering', delivering_at = ? WHERE id = ?").run(nowIso(), orderId);
+  logEvent(orderId, actor?.name || 'Cashier', 'waiter-sent', 'Waiter sent to deliver to the room');
+  const view = orderView(orderId);
+  publish(['orders']);
+  publishToRoles(['waiter', 'admin', 'manager', 'cashier'], {
+    type: 'alert', kind: 'order.delivering', title: `Deliver now · order #${order.code} · Room ${view.room_number}`, order: view, at: Date.now(),
+  });
+  return { order: view };
+}
+
+export function deliverOrder({ orderId, actor }) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return { error: 'Order not found.' };
+  if (['delivered', 'completed'].includes(order.status)) return { order: orderView(orderId) };
+  db.prepare("UPDATE orders SET status = 'delivered', delivered_at = ?, delivered_by = ? WHERE id = ?").run(nowIso(), actor?.id || null, orderId);
+  logEvent(orderId, actor?.name || 'Waiter', 'delivered', 'Delivered to the room');
+  const charge = chargeOrderToFolio({ orderId, actor });
+  const view = orderView(orderId);
+  publish(['orders', 'folios', 'rooms', 'stays', 'reports']);
+  publishToRoles(['cashier', 'admin', 'manager'], {
+    type: 'alert', kind: 'order.delivered',
+    title: `Order #${view.code} delivered · ${charge?.charged ? 'added to the room bill' : 'pay at the till'}`,
+    order: view, at: Date.now(),
+  });
+  return { order: view, charged: !!charge?.charged };
+}
+
+/** Put a delivered order on the guest's bill. Safe to call twice. */
+export function chargeOrderToFolio({ orderId, actor }) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return { error: 'Order not found.' };
+  if (order.charged) return { charged: false, reason: 'already charged' };
+  if (!order.stay_id) {
+    db.prepare('UPDATE orders SET charged = 1 WHERE id = ?').run(orderId);
+    logEvent(orderId, actor?.name || 'Cashier', 'charged', 'Walk-in order collected at the till');
+    return { charged: false, reason: 'no room folio' };
+  }
+  for (const item of db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId)) {
+    postFolioItem({
+      stayId: order.stay_id, kind: 'food', station: item.station, orderId,
+      description: `${item.name} × ${item.qty} · order #${order.code}`,
+      qty: item.qty, unitPrice: item.unit_price, actor,
+    });
+  }
+  db.prepare('UPDATE orders SET charged = 1 WHERE id = ?').run(orderId);
+  logEvent(orderId, actor?.name || 'Cashier', 'charged', `Charged ${order.total} to the room folio`);
+  publish(['folios', 'stays', 'rooms', 'reports']);
+  return { charged: true };
+}
+
+export function closeOrder({ orderId, paidMethod, actor }) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return { error: 'Order not found.' };
+  if (order.status === 'new') return { error: 'Accept the order before closing it.' };
+  if (order.stay_id && !order.charged && ['delivered', 'ready', 'delivering'].includes(order.status)) {
+    chargeOrderToFolio({ orderId, actor });
+  }
+  db.prepare("UPDATE orders SET status = 'completed', closed_at = ? WHERE id = ?").run(nowIso(), orderId);
+  logEvent(orderId, actor?.name || 'Cashier', 'closed', paidMethod ? `Paid at the till · ${paidMethod}` : 'Closed');
+  publish(['orders', 'reports']);
+  return { order: orderView(orderId) };
+}
+
+export function cancelOrder({ orderId, reason, actor }) {
+  db.prepare("UPDATE orders SET status = 'cancelled', closed_at = ?, cancel_reason = ? WHERE id = ?").run(nowIso(), reason || 'Cancelled', orderId);
+  logEvent(orderId, actor?.name || 'Cashier', 'cancelled', reason || 'Cancelled');
+  publish(['orders']);
+  return { order: orderView(orderId) };
+}
+
+/* --------------------- rooms, housekeeping, maintenance ------------------- */
+
+export function setRoomStatus({ roomId, status, note, actor }) {
+  const room = roomById(roomId);
+  if (!room) return { error: 'Room not found.' };
+  const active = activeStayForRoom(roomId);
+  if (active && ['available', 'cleaning', 'dirty'].includes(status)) {
+    return { error: `Room ${room.number} still has a guest checked in. Pay & release first.` };
+  }
+  db.prepare('UPDATE rooms SET status = ?, block_reason = ? WHERE id = ?').run(status, status === 'maintenance' ? note || 'Blocked' : null, roomId);
+  audit({ actor, action: 'room-status', entity: 'room', entityId: roomId, detail: `${room.number} → ${status}${note ? ` (${note})` : ''}` });
+  publish(['rooms', 'housekeeping', 'reports']);
+  return { ok: true };
+}
+
+export function advanceHousekeeping({ taskId, actor }) {
+  const task = db.prepare('SELECT * FROM housekeeping_tasks WHERE id = ?').get(taskId);
+  if (!task) return { error: 'Task not found.' };
+  const next = task.status === 'pending' ? 'in progress' : 'completed';
+  db.prepare('UPDATE housekeeping_tasks SET status = ?, completed_at = ? WHERE id = ?').run(next, next === 'completed' ? nowIso() : null, taskId);
+  if (next === 'completed') {
+    const room = roomById(task.room_id);
+    if (room && ['dirty', 'cleaning'].includes(room.status)) db.prepare("UPDATE rooms SET status = 'available' WHERE id = ?").run(room.id);
+  }
+  publish(['housekeeping', 'rooms']);
+  return { ok: true, status: next };
+}
+
+export function resolveMaintenance({ issueId, actor }) {
+  const issue = db.prepare('SELECT * FROM maintenance_issues WHERE id = ?').get(issueId);
+  if (!issue) return { error: 'Issue not found.' };
+  db.prepare("UPDATE maintenance_issues SET status = 'resolved', resolved_at = ? WHERE id = ?").run(nowIso(), issueId);
+  const room = roomById(issue.room_id);
+  if (room && room.status === 'maintenance') db.prepare("UPDATE rooms SET status = 'available' WHERE id = ?").run(room.id);
+  publish(['maintenance', 'rooms']);
+  return { ok: true };
+}
+
+export function createMaintenance({ roomId, issue, category, priority, assignee, actor }) {
+  const id_ = `MT-${120 + Math.floor(Math.random() * 800)}`;
+  db.prepare(`INSERT INTO maintenance_issues (id, room_id, issue, category, assignee, priority, status, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`).run(id_, roomId || null, issue, category || 'General', assignee || 'Unassigned', priority || 'normal', nowIso());
+  if (roomId && priority === 'high') db.prepare("UPDATE rooms SET status = 'maintenance', block_reason = ? WHERE id = ? AND status != 'occupied'").run(issue, roomId);
+  publish(['maintenance', 'rooms']);
+  return { id: id_ };
+}
+
+/* --------------------------- QR self registration -------------------------- */
+
+export function approveCheckinRequest({ requestId, billingMode, rate, deposit, method, expectedOutAt, actor }) {
+  const request = db.prepare('SELECT * FROM checkin_requests WHERE id = ?').get(requestId);
+  if (!request) return { error: 'Request not found.' };
+  if (request.status !== 'pending') return { error: 'This request was already handled.' };
+  const payload = JSON.parse(request.payload || '{}');
+  const result = checkInRoom({
+    roomId: request.room_id, guest: payload, billingMode, rate, deposit, method, expectedOutAt, source: 'self', actor,
+  });
+  if (result.error) return result;
+  db.prepare("UPDATE checkin_requests SET status = 'approved', handled_by = ?, handled_at = ?, stay_id = ? WHERE id = ?")
+    .run(actor?.name || 'Cashier', nowIso(), result.stayId, requestId);
+  publish(['checkinRequests', 'rooms']);
+  return result;
+}
+
+export function rejectCheckinRequest({ requestId, reason, actor }) {
+  db.prepare("UPDATE checkin_requests SET status = 'rejected', handled_by = ?, handled_at = ?, note = ? WHERE id = ?")
+    .run(actor?.name || 'Cashier', nowIso(), reason || 'Rejected at the desk', requestId);
+  publish(['checkinRequests']);
+  return { ok: true };
+}
+
+export function createCheckinRequest({ roomId, payload, note, source = 'qr' }) {
+  const rid = id('cr');
+  db.prepare("INSERT INTO checkin_requests (id, room_id, payload, status, note, created_at) VALUES (?, ?, ?, 'pending', ?, ?)")
+    .run(rid, roomId || null, JSON.stringify(payload || {}), note || `Self registration · ${source}`, nowIso());
+  const room = roomId ? roomById(roomId) : null;
+  publish(['checkinRequests']);
+  publishToRoles(['cashier', 'admin', 'manager'], {
+    type: 'alert', kind: 'checkin.request',
+    title: `New guest registration${room ? ` · Room ${room.number}` : ''}`,
+    payload, requestId: rid, at: Date.now(),
+  });
+  return { id: rid };
+}

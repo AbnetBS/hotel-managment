@@ -1,0 +1,329 @@
+/**
+ * SQLite storage for Clove House.
+ * One file, no external service — easy to back up (copy server/data/clove.db).
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+export const DATA_DIR = path.join(here, 'data');
+export const UPLOAD_DIR = path.join(here, 'uploads');
+export const DB_PATH = process.env.CLOVE_DB || path.join(DATA_DIR, 'clove.db');
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+export const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  username TEXT UNIQUE NOT NULL,
+  pin_hash TEXT NOT NULL,
+  pin_salt TEXT NOT NULL,
+  role TEXT NOT NULL,
+  phone TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT,
+  last_login_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS room_types (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  billing_mode TEXT NOT NULL DEFAULT 'nightly',
+  nightly_rate REAL NOT NULL DEFAULT 0,
+  hourly_rate REAL NOT NULL DEFAULT 0,
+  dayuse_rate REAL NOT NULL DEFAULT 0,
+  dayuse_hours REAL NOT NULL DEFAULT 3,
+  max_guests INTEGER NOT NULL DEFAULT 2,
+  beds TEXT,
+  amenities TEXT,
+  photos TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS rooms (
+  id TEXT PRIMARY KEY,
+  number TEXT UNIQUE NOT NULL,
+  floor INTEGER NOT NULL DEFAULT 1,
+  room_type_id TEXT REFERENCES room_types(id),
+  status TEXT NOT NULL DEFAULT 'available',
+  billing_mode TEXT,
+  block_reason TEXT,
+  note TEXT,
+  qr_token TEXT UNIQUE,
+  sort INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS registration_fields (
+  id TEXT PRIMARY KEY,
+  key TEXT UNIQUE NOT NULL,
+  label TEXT NOT NULL,
+  label_am TEXT,
+  type TEXT NOT NULL DEFAULT 'text',
+  required INTEGER NOT NULL DEFAULT 0,
+  options TEXT,
+  placeholder TEXT,
+  sort INTEGER DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS guests (
+  id TEXT PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  nationality TEXT,
+  id_type TEXT,
+  id_number TEXT,
+  extra TEXT,
+  created_at TEXT,
+  created_by TEXT,
+  source TEXT
+);
+
+CREATE TABLE IF NOT EXISTS stays (
+  id TEXT PRIMARY KEY,
+  code TEXT,
+  guest_id TEXT REFERENCES guests(id),
+  room_id TEXT REFERENCES rooms(id),
+  billing_mode TEXT NOT NULL DEFAULT 'nightly',
+  rate REAL NOT NULL DEFAULT 0,
+  dayuse_hours REAL DEFAULT 3,
+  grace_hours REAL DEFAULT 1,
+  units_override REAL,
+  check_in_at TEXT,
+  expected_out_at TEXT,
+  check_out_at TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  discount REAL DEFAULT 0,
+  adults INTEGER DEFAULT 1,
+  children INTEGER DEFAULT 0,
+  source TEXT DEFAULT 'cashier',
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS folio_items (
+  id TEXT PRIMARY KEY,
+  stay_id TEXT REFERENCES stays(id),
+  kind TEXT NOT NULL,
+  description TEXT NOT NULL,
+  qty REAL DEFAULT 1,
+  unit_price REAL DEFAULT 0,
+  amount REAL NOT NULL DEFAULT 0,
+  station TEXT,
+  order_id TEXT,
+  method TEXT,
+  reference TEXT,
+  bill_date TEXT,
+  void INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT,
+  created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS menu_categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  name_am TEXT,
+  station TEXT NOT NULL DEFAULT 'kitchen',
+  sort INTEGER DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS menu_items (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  name_am TEXT,
+  description TEXT,
+  price REAL NOT NULL DEFAULT 0,
+  category_id TEXT REFERENCES menu_categories(id),
+  station TEXT NOT NULL DEFAULT 'kitchen',
+  prep_minutes INTEGER DEFAULT 15,
+  available INTEGER NOT NULL DEFAULT 1,
+  emoji TEXT,
+  sort INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id TEXT PRIMARY KEY,
+  code TEXT,
+  room_id TEXT,
+  stay_id TEXT,
+  guest_name TEXT,
+  channel TEXT NOT NULL DEFAULT 'qr',
+  status TEXT NOT NULL DEFAULT 'new',
+  note TEXT,
+  total REAL DEFAULT 0,
+  call_confirmed INTEGER DEFAULT 0,
+  charged INTEGER DEFAULT 0,
+  cancel_reason TEXT,
+  created_at TEXT,
+  accepted_at TEXT,
+  sent_at TEXT,
+  ready_at TEXT,
+  delivering_at TEXT,
+  delivered_at TEXT,
+  closed_at TEXT,
+  created_by TEXT,
+  accepted_by TEXT,
+  delivered_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id TEXT PRIMARY KEY,
+  order_id TEXT REFERENCES orders(id),
+  menu_item_id TEXT,
+  name TEXT,
+  name_am TEXT,
+  qty REAL DEFAULT 1,
+  unit_price REAL DEFAULT 0,
+  station TEXT,
+  status TEXT NOT NULL DEFAULT 'new',
+  note TEXT,
+  accepted_at TEXT,
+  done_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS order_events (
+  id TEXT PRIMARY KEY,
+  order_id TEXT,
+  at TEXT,
+  actor TEXT,
+  type TEXT,
+  detail TEXT
+);
+
+CREATE TABLE IF NOT EXISTS checkin_requests (
+  id TEXT PRIMARY KEY,
+  room_id TEXT,
+  payload TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  note TEXT,
+  created_at TEXT,
+  handled_by TEXT,
+  handled_at TEXT,
+  stay_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS housekeeping_tasks (
+  id TEXT PRIMARY KEY,
+  room_id TEXT,
+  type TEXT,
+  assignee TEXT,
+  priority TEXT DEFAULT 'normal',
+  status TEXT DEFAULT 'pending',
+  note TEXT,
+  created_at TEXT,
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS maintenance_issues (
+  id TEXT PRIMARY KEY,
+  room_id TEXT,
+  issue TEXT,
+  category TEXT,
+  assignee TEXT,
+  priority TEXT DEFAULT 'normal',
+  status TEXT DEFAULT 'open',
+  created_at TEXT,
+  resolved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reservations (
+  id TEXT PRIMARY KEY,
+  code TEXT,
+  guest_name TEXT,
+  phone TEXT,
+  room_id TEXT,
+  room_type_id TEXT,
+  arrival TEXT,
+  departure TEXT,
+  nights INTEGER,
+  rate REAL,
+  source TEXT,
+  status TEXT DEFAULT 'confirmed',
+  deposit REAL DEFAULT 0,
+  note TEXT,
+  created_at TEXT,
+  created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  at TEXT,
+  actor_id TEXT,
+  actor_name TEXT,
+  role TEXT,
+  action TEXT,
+  entity TEXT,
+  entity_id TEXT,
+  detail TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_folio_stay ON folio_items(stay_id);
+CREATE INDEX IF NOT EXISTS idx_order_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_stays_status ON stays(status);
+CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
+`);
+
+/* ---------- small helpers ---------- */
+
+export function id(prefix = 'id') {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
+}
+
+export function nowIso() {
+  return new Date().toISOString();
+}
+
+export function parseJson(value, fallback) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+export function getSetting(key, fallback = null) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  if (!row) return fallback;
+  return parseJson(row.value, row.value);
+}
+
+export function setSetting(key, value) {
+  const stored = typeof value === 'string' ? value : JSON.stringify(value);
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, stored);
+}
+
+export function allSettings() {
+  const out = {};
+  for (const row of db.prepare('SELECT key, value FROM settings').all()) {
+    out[row.key] = parseJson(row.value, row.value);
+  }
+  return out;
+}
+
+export function audit({ actor, action, entity, entityId, detail }) {
+  db.prepare(
+    `INSERT INTO audit_log (id, at, actor_id, actor_name, role, action, entity, entity_id, detail)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id('log'), nowIso(), actor?.id || null, actor?.name || 'System', actor?.role || 'system', action, entity || null, entityId || null, detail || null);
+}

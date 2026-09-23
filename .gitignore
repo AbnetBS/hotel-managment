@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.DS_Store
+*.log
+
+# Local database and staff uploads (runtime data, not source)
+server/data/
+server/uploads/*
+!server/uploads/.gitkeep
