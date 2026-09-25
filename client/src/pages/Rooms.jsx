@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, clientRef, fileToDataUrl } from '../lib/api.js';
+import { api, clientRef, fileToDataUrl, mediaUrl } from '../lib/api.js';
 import { useApp, useNow, useTopic } from '../lib/store.jsx';
 import { computeRoomCharge, BILLING_MODES } from '../../../shared/billing.js';
 import { money, formatElapsed, formatCountdown, initials, dateTimeOf, toLocalInput, fromLocalInput, relative } from '../lib/format.js';
@@ -428,7 +428,7 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
               <div className="v">{folio?.guest?.id_type || '—'}</div>
               <div className="tiny muted" style={{ marginTop: 4 }}>{folio?.guest?.id_number || ''}</div>
               {folio?.guest?.id_document_url ? (
-                <a className="tiny" href={folio.guest.id_document_url} target="_blank" rel="noreferrer" style={{ color: 'var(--teal-dark)' }}>
+                <a className="tiny" href={mediaUrl(folio.guest.id_document_url)} target="_blank" rel="noreferrer" style={{ color: 'var(--teal-dark)' }}>
                   document on file
                 </a>
               ) : null}
@@ -1597,7 +1597,7 @@ export function IdDocumentCard({ guest, onUploaded }) {
     }
   };
 
-  const copy = guest.id_document_url || null;
+  const copy = guest.id_document_url ? mediaUrl(guest.id_document_url) : null;
 
   return (
     <div className="card card-pad" style={{ marginTop: 14 }}>

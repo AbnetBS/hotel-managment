@@ -8,3 +8,5 @@ dist/
 server/data/
 server/uploads/*
 !server/uploads/.gitkeep
+# Guest identity scans — sensitive runtime data, never in source control
+server/id-docs/

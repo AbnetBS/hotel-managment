@@ -12,9 +12,11 @@ export default function Login() {
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [build, setBuild] = useState('');
 
   useEffect(() => {
     api.public.get('/auth/roles').then((data) => setRoles(data.roles)).catch(() => setRoles([]));
+    api.public.get('/health').then((data) => setBuild(data.version || '')).catch(() => setBuild(''));
   }, []);
 
   const chooseRole = (key) => {
@@ -145,6 +147,11 @@ export default function Login() {
               </div>
             </form>
           )}
+          {build ? (
+            <div className="tiny muted" style={{ marginTop: 18, textAlign: 'center' }}>
+              build {build}
+            </div>
+          ) : null}
         </div>
       </section>
     </div>

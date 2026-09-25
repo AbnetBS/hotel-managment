@@ -15,8 +15,12 @@
     "refresh-demo": "npm run build && npm run reset-demo",
     "test:api": "node scripts/test-flows.mjs",
     "test:security": "node scripts/test-security.mjs",
-    "verify": "node scripts/smoke.mjs && node scripts/test-flows.mjs && node scripts/test-round3.mjs && node scripts/test-security.mjs",
-    "test:round3": "node scripts/test-round3.mjs"
+    "test:round3": "node scripts/test-round3.mjs",
+    "test:uploads": "node scripts/test-uploads-security.mjs",
+    "test:overview": "node scripts/test-overview.mjs",
+    "test:qr": "node scripts/test-qr.mjs",
+    "test:health": "node scripts/test-health.mjs",
+    "verify": "node scripts/smoke.mjs && node scripts/test-flows.mjs && node scripts/test-round3.mjs && node scripts/test-security.mjs && node scripts/test-uploads-security.mjs && node scripts/test-qr.mjs && node scripts/test-health.mjs && node scripts/test-overview.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
