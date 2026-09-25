@@ -3,21 +3,42 @@ import { useApp } from '../lib/store.jsx';
 import { api } from '../lib/api.js';
 import { Icon, ROLE_ICON } from '../lib/icons.jsx';
 import { Field } from '../lib/ui.jsx';
+import { ROLES } from '../../../shared/billing.js';
+
+// Role definitions ship with the app, so the first-run sign-in screen never
+// depends on the API to render its role choices.
+const LOCAL_ROLES = Object.values(ROLES);
 
 export default function Login() {
   const { login, settings, toast } = useApp();
-  const [roles, setRoles] = useState([]);
+  const roles = LOCAL_ROLES;
   const [role, setRole] = useState(null);
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [build, setBuild] = useState('');
+  const [serverState, setServerState] = useState('checking');
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
 
   useEffect(() => {
-    api.public.get('/auth/roles').then((data) => setRoles(data.roles)).catch(() => setRoles([]));
-    api.public.get('/health').then((data) => setBuild(data.version || '')).catch(() => setBuild(''));
-  }, []);
+    let active = true;
+    api.public.get('/health')
+      .then((data) => {
+        if (!active) return;
+        setBuild(data.version || '');
+        setServerState('online');
+      })
+      .catch(() => {
+        if (active) setServerState('offline');
+      });
+    return () => { active = false; };
+  }, [connectionAttempt]);
+
+  const retryConnection = () => {
+    setServerState('checking');
+    setConnectionAttempt((attempt) => attempt + 1);
+  };
 
   const chooseRole = (key) => {
     setRole(key);
@@ -78,17 +99,32 @@ export default function Login() {
               : 'Pick your role, then sign in with your username and PIN.'}
           </p>
 
-          {!role ? (
-            <div className="role-grid">
-              {roles.map((item) => (
-                <button key={item.key} className="role-card" onClick={() => chooseRole(item.key)}>
-                  <div className="ic"><Icon name={ROLE_ICON[item.key] || 'user'} size={17} /></div>
-                  <strong>{item.label}</strong>
-                  <div className="am">{item.am}</div>
-                  <div className="blurb">{item.blurb}</div>
-                </button>
-              ))}
+          {serverState === 'offline' ? (
+            <div className="banner warn" role="status" style={{ marginBottom: 16 }}>
+              <Icon name="alert" size={15} />
+              <span style={{ flex: 1 }}>
+                Role choices are ready, but the sign-in server is not responding. Check the hotel connection, then retry.
+              </span>
+              <button type="button" className="btn btn-sm" onClick={retryConnection}>Retry</button>
             </div>
+          ) : null}
+
+          {!role ? (
+            <>
+              <div className="role-grid" role="group" aria-label="Choose your staff role">
+                {roles.map((item) => (
+                  <button type="button" key={item.key} className="role-card" onClick={() => chooseRole(item.key)}>
+                    <div className="ic"><Icon name={ROLE_ICON[item.key] || 'user'} size={17} /></div>
+                    <strong>{item.label}</strong>
+                    <div className="am">{item.am}</div>
+                    <div className="blurb">{item.blurb}</div>
+                  </button>
+                ))}
+              </div>
+              <p className="tiny muted" style={{ marginTop: 16, lineHeight: 1.5 }}>
+                New staff accounts are created by an Owner / Admin under Staff &amp; access.
+              </p>
+            </>
           ) : (
             <form className="login-form" onSubmit={submit}>
               <div className="row" style={{ marginBottom: 16 }}>

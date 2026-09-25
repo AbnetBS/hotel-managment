@@ -39,6 +39,9 @@ export default defineConfig({
   },
   server: {
     host: true,
+    // Arena previews use <port>-<sandbox>.e2b.app hostnames. Vite 7 blocks
+    // these by default unless the preview domain is allow-listed.
+    allowedHosts: ['.e2b.app'],
     port: 5173,
     // Allow importing from the repo-level /shared folder during dev.
     fs: { allow: [path.resolve(process.cwd()), path.resolve(process.cwd(), '..')] },
