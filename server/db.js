@@ -10,10 +10,14 @@ import Database from 'better-sqlite3';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.join(here, 'data');
 export const UPLOAD_DIR = path.join(here, 'uploads');
+// Guest identity scans are sensitive: they live OUTSIDE the public /uploads
+// folder and are only ever streamed back through an authenticated API route.
+export const ID_DIR = path.join(here, 'id-docs');
 export const DB_PATH = process.env.CLOVE_DB || path.join(DATA_DIR, 'clove.db');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(ID_DIR, { recursive: true });
 
 export const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -429,6 +433,8 @@ ensureColumn('maintenance_issues', 'cost', 'REAL');
 ensureColumn('guests', 'id_document_url', 'TEXT');
 ensureColumn('guests', 'id_document_at', 'TEXT');
 ensureColumn('guests', 'id_document_by', 'TEXT');
+// The private filename on disk (in ID_DIR) — never exposed to the browser.
+ensureColumn('guests', 'id_document_file', 'TEXT');
 // branches
 ensureColumn('rooms', 'branch_id', 'TEXT');
 ensureColumn('users', 'branch_id', 'TEXT');

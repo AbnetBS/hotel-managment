@@ -61,6 +61,19 @@ export const api = {
   },
 };
 
+/**
+ * Build a browser-loadable URL for a protected media route (e.g. a guest ID
+ * scan). An <img> or <a> cannot send the auth header, so we append the session
+ * token as a query param — the server accepts it there, exactly like the WS.
+ */
+export function mediaUrl(pathOrUrl) {
+  if (!pathOrUrl) return pathOrUrl;
+  if (!pathOrUrl.startsWith('/api/')) return pathOrUrl; // public asset (e.g. /uploads/*)
+  const token = getToken();
+  if (!token) return pathOrUrl;
+  return `${pathOrUrl}${pathOrUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+}
+
 /** Turn a picked file into a data URL for the upload endpoint. */
 export function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {

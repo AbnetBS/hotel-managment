@@ -11,7 +11,9 @@
  *
  * Kept apart from actions.js on purpose: the front-desk file stays readable.
  */
-import { db, audit, id, nowIso, allSettings } from './db.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { db, audit, id, nowIso, allSettings, ID_DIR } from './db.js';
 import { publish, publishToRoles } from './realtime.js';
 import { verifyPin, randomToken } from './password.js';
 import { rateFor, toEtb } from './fx.js';
@@ -400,20 +402,34 @@ export function updateLostItem({ foundId, status, storage, returnedTo, actor }) 
  * Identity documents (feature 19)
  * ========================================================================== */
 
-export function saveIdDocument({ guestId, url, actor }) {
-  db.prepare('UPDATE guests SET id_document_url = ?, id_document_at = ?, id_document_by = ? WHERE id = ?')
-    .run(url, nowIso(), actor?.name || null, guestId);
+export function saveIdDocument({ guestId, url, file, actor }) {
+  // Replacing a scan? Remove the old file so nothing lingers on disk.
+  const prev = db.prepare('SELECT id_document_file FROM guests WHERE id = ?').get(guestId);
+  if (prev?.id_document_file && prev.id_document_file !== file) removeIdFile(prev.id_document_file);
+  db.prepare('UPDATE guests SET id_document_url = ?, id_document_file = ?, id_document_at = ?, id_document_by = ? WHERE id = ?')
+    .run(url, file || null, nowIso(), actor?.name || null, guestId);
   audit({ actor, action: 'id-document', entity: 'guest', entityId: guestId, detail: 'Identity document stored' });
   publish(['stays', 'folios']);
   return { ok: true };
 }
 
-/** Retention: the scan does not live forever. */
+/** Delete a stored scan from the private ID_DIR (basename only — no traversal). */
+function removeIdFile(file) {
+  if (!file) return;
+  try {
+    fs.rmSync(path.join(ID_DIR, path.basename(String(file))), { force: true });
+  } catch {
+    /* already gone — fine */
+  }
+}
+
+/** Retention: the scan does not live forever — the bytes are erased too. */
 export function purgeIdDocuments({ olderThanDays = 90, actor }) {
   const cutoff = new Date(Date.now() - Number(olderThanDays) * 86400000).toISOString();
-  const rows = db.prepare('SELECT id FROM guests WHERE id_document_url IS NOT NULL AND id_document_at < ?').all(cutoff);
+  const rows = db.prepare('SELECT id, id_document_file FROM guests WHERE id_document_url IS NOT NULL AND id_document_at < ?').all(cutoff);
   for (const row of rows) {
-    db.prepare('UPDATE guests SET id_document_url = NULL, id_document_at = NULL, id_document_by = NULL WHERE id = ?').run(row.id);
+    removeIdFile(row.id_document_file);
+    db.prepare('UPDATE guests SET id_document_url = NULL, id_document_file = NULL, id_document_at = NULL, id_document_by = NULL WHERE id = ?').run(row.id);
   }
   if (rows.length) {
     audit({ actor, action: 'id-document-purge', entity: 'guest', entityId: null, detail: `${rows.length} document(s) older than ${olderThanDays} days deleted` });

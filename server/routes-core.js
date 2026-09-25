@@ -3,7 +3,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
-import { db, allSettings, nowIso, id, audit, UPLOAD_DIR } from './db.js';
+import { db, allSettings, nowIso, id, audit, ID_DIR } from './db.js';
 import { login, logout, requireAuth, requireRole, userForToken } from './auth.js';
 import * as repo from './repo.js';
 import * as actions from './actions.js';
@@ -298,6 +298,25 @@ core.get('/guests/:id/document', requireAuth, requireRole('admin', 'manager', 'c
   res.json({ guest });
 });
 
+/**
+ * The scan itself. It is NOT in the public /uploads folder — it is streamed
+ * only to signed-in front-desk staff. The filename comes from the database
+ * (never the URL), so guessed or URL-encoded paths cannot reach another file.
+ */
+const ID_CONTENT_TYPES = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
+core.get('/guests/:id/document/photo', requireAuth, requireRole('admin', 'manager', 'cashier'), (req, res) => {
+  const guest = db.prepare('SELECT id, id_document_file FROM guests WHERE id = ?').get(req.params.id);
+  if (!guest || !guest.id_document_file) return res.status(404).json({ error: 'No document on file.' });
+  const file = path.basename(String(guest.id_document_file)); // defuse any traversal in stored data
+  const full = path.join(ID_DIR, file);
+  if (!full.startsWith(ID_DIR + path.sep) || !fs.existsSync(full)) return res.status(404).json({ error: 'No document on file.' });
+  const ext = (file.split('.').pop() || 'jpg').toLowerCase();
+  audit({ actor: req.user, action: 'id-document-view', entity: 'guest', entityId: guest.id, detail: 'Identity document image streamed' });
+  res.setHeader('Cache-Control', 'private, no-store'); // never cached by shared proxies
+  res.type(ID_CONTENT_TYPES[ext] || 'application/octet-stream');
+  res.send(fs.readFileSync(full));
+});
+
 core.post('/guests/:id/document', requireAuth, requireRole('admin', 'manager', 'cashier'), (req, res) => {
   const { data_url: dataUrl } = req.body || {};
   if (!dataUrl || !/^data:image\/(png|jpeg|jpg|webp);base64,/.test(dataUrl)) {
@@ -307,9 +326,11 @@ core.post('/guests/:id/document', requireAuth, requireRole('admin', 'manager', '
   if (buffer.length > 4 * 1024 * 1024) return res.status(400).json({ error: 'Photo is larger than 4 MB.' });
   const ext = (dataUrl.match(/^data:image\/(\w+)/) || [, 'jpg'])[1].replace('jpeg', 'jpg');
   const safe = `id-${req.params.id}-${Date.now()}.${ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, safe), buffer);
-  const result = ops.saveIdDocument({ guestId: req.params.id, url: `/uploads/${safe}`, actor: req.user });
-  res.json({ ...result, url: `/uploads/${safe}` });
+  // Stored in the PRIVATE id-docs folder, not the public /uploads static mount.
+  fs.writeFileSync(path.join(ID_DIR, safe), buffer);
+  const url = `/api/guests/${req.params.id}/document/photo`;
+  const result = ops.saveIdDocument({ guestId: req.params.id, url, file: safe, actor: req.user });
+  res.json({ ...result, url });
 });
 
 /** Retention: throw away scans older than the hotel's policy. */
@@ -465,7 +486,7 @@ core.get('/reports/guests', requireAuth, requireRole('manager', 'admin', 'cashie
 
 /* ------------------------------ QR codes --------------------------------- */
 
-core.get('/qr/:roomId.png', requireAuth, async (req, res) => {
+core.get('/qr/:roomId.png', requireAuth, guarded(async (req, res) => {
   const room = db.prepare('SELECT * FROM rooms WHERE id = ? OR number = ?').get(req.params.roomId, req.params.roomId);
   if (!room) return res.status(404).json({ error: 'Room not found.' });
   const target = req.query.target === 'register' ? 'r' : 'q';
@@ -473,7 +494,7 @@ core.get('/qr/:roomId.png', requireAuth, async (req, res) => {
   const url = `${base}/${target}/${room.qr_token}`;
   const png = await QRCode.toBuffer(url, { width: 512, margin: 1, color: { dark: '#163536', light: '#ffffff' } });
   res.type('png').send(png);
-});
+}));
 
 /* ------------------------- guest (no login) pages ----------------------- */
 

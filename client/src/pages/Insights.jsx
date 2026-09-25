@@ -17,7 +17,10 @@ function Overview({ onNavigate }) {
   const { snapshot, rooms, orders, requests, housekeeping, maintenance, stays, settings } = useApp();
   const now = useNow(1000);
 
-  const occupied = rooms.filter((room) => room.status === 'occupied');
+  // A room can read "occupied" after its bill was closed but before housekeeping
+  // released it — there is no active stay then, so guard against a missing stay
+  // instead of crashing the whole overview on room.stay / room.totals.
+  const occupied = rooms.filter((room) => room.status === 'occupied' && room.stay && room.totals);
   const outstanding = rooms.reduce((sum, room) => sum + (room.totals?.balance || 0), 0);
   const arrivals = stays.filter((stay) => new Date(stay.check_in_at).toDateString() === new Date().toDateString());
   const newOrders = orders.filter((order) => order.status === 'new');

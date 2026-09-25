@@ -41,10 +41,36 @@ app.use('/api/public', rateLimit({ name: 'public', windowMs: 60_000, max: 240, m
 // A sane ceiling for everything else.
 app.use('/api', rateLimit({ name: 'api', windowMs: 60_000, max: 900 }));
 
+// Read the build stamp fresh every time. Caching it at boot meant a rebuild +
+// reload still reported the old version until the process restarted — which
+// read as "the fix didn't deploy". Reading the file per call fixes that.
+function buildId() {
+  try {
+    return fs.readFileSync(path.join(distDir, 'build-id.txt'), 'utf8').trim() || 'dev';
+  } catch {
+    return 'dev';
+  }
+}
+
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, online: onlineCount(), db: path.basename(DB_PATH), time: new Date().toISOString() });
+  res.json({ ok: true, online: onlineCount(), db: path.basename(DB_PATH), version: buildId(), time: new Date().toISOString() });
 });
 
+// Identity scans never belong under the public /uploads mount. This guard is
+// belt-and-braces: it refuses any `id-*` file even if one was left there by an
+// older build, and it decodes the path first so a URL-encoded guess (%69d-…)
+// cannot slip past. Everything else (menu photos, room photos) is still public.
+app.use('/uploads', (req, res, next) => {
+  let decoded = req.path;
+  try {
+    decoded = decodeURIComponent(req.path);
+  } catch {
+    return res.status(400).json({ error: 'Bad path.' });
+  }
+  const base = path.basename(decoded).toLowerCase();
+  if (base.startsWith('id-')) return res.status(404).json({ error: 'Not found.' });
+  next();
+});
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }));
 app.use('/api', core);
 app.use('/api/admin', admin);
