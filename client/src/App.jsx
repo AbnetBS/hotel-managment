@@ -54,13 +54,15 @@ export const NAV = {
   audit: { label: 'Audit log', icon: 'list' },
   station: { label: 'My station', icon: 'chef-hat' },
   deliveries: { label: 'Deliveries', icon: 'send' },
+  tables: { label: 'Tables & QR', icon: 'qr' },
+  receipt: { label: 'Receipt template', icon: 'print' },
 };
 
 const NAV_GROUPS = [
   { key: 'overview', items: ['overview', 'reports'] },
   { key: 'front', label: 'Front desk', items: ['rooms', 'requests', 'orders', 'reservations', 'stays', 'folios'] },
   { key: 'service', label: 'Service', items: ['requests', 'station', 'deliveries', 'housekeeping', 'maintenance'] },
-  { key: 'setup', label: 'Hotel setup', items: ['roomtypes', 'menu', 'inventory', 'lostfound', 'currency', 'branches', 'qrcodes', 'formbuilder', 'staff', 'settings', 'audit'] },
+  { key: 'setup', label: 'Hotel setup', items: ['roomtypes', 'menu', 'tables', 'inventory', 'lostfound', 'currency', 'branches', 'qrcodes', 'receipt', 'formbuilder', 'staff', 'settings', 'audit'] },
 ];
 
 /** The current view + a setter, kept in step with the URL fragment. */
@@ -116,6 +118,8 @@ function Screen({ view, onNavigate }) {
     case 'staff': return <AdminTeam mode="staff" />;
     case 'formbuilder': return <AdminTeam mode="form" />;
     case 'qrcodes': return <AdminSystem mode="qrcodes" />;
+    case 'tables': return <AdminSystem mode="tables" />;
+    case 'receipt': return <AdminSystem mode="receipt" />;
     case 'settings': return <AdminSystem mode="settings" />;
     case 'audit': return <AdminSystem mode="audit" />;
     default: return <Insights mode="overview" />;

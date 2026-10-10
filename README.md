@@ -45,29 +45,23 @@ Coolify step-by-step (domains, HTTPS, volumes, health checks) is in **[COOLIFY.m
 
 | Role | Username | What they see |
 | --- | --- | --- |
-| Owner / Admin | `admin` | everything: rooms, prices, menu, staff, form builder, QR codes, reports, audit |
-| Manager | `manager` | KPI dashboard, reports, housekeeping, maintenance |
-| Cashier / Front desk | `cashier` | room board, check-in, orders, bills, payments |
-| Waiter | `waiter` | ready orders to take to the rooms |
-| Kitchen | `kitchen` | food tickets only |
-| Pastry & cake | `pastry` | cakes, pastry and dessert tickets only |
-| Barista | `barista` | coffee & bar tickets only |
-| Juice station | `juice` | juice & soft-drink tickets only |
-| Housekeeping | `housekeeping` | rooms to turn around |
+| Owner / Admin | `admin` | everything: rooms, prices, menu & photos, tables, receipt template, staff, form builder, QR codes, reports, audit |
+| Cashier / Front desk | `cashier` | room board, check-in, orders, tables, bills, payments, lost & found |
 
 ---
 
 ## The working day, end to end
 
-1. **Guest scans the QR code in the room** → menu opens on their phone → they tap items and send.
-2. **The order rings the cashier full screen** (sound + red alert). She taps
-   *Accept · called & confirmed* — that means she phoned the room and confirmed it.
-3. She **sends** it; every item goes to its own station (kitchen / barista / juice).
-4. The station taps **Accept** when it starts, **Done** when the plate leaves.
-5. When everything on the order is done, the desk gets a **Send waiter** button.
-6. The waiter delivers; **the money lands on the room bill automatically**.
-7. At checkout the cashier taps **Paid & release** — the room turns **purple (needs
-   cleaning)** and the cleaning alarm rings on the housekeeping board *and* at the desk
+1. **A guest scans the QR code** — in the room or at the table → the menu opens on their
+   phone → they tap items and send. Table codes open the menu straight away; room codes
+   also show the room and the guest's running bill.
+2. **The order rings the cashier full screen** (sound + red alert), and a card appears
+   under the room grid — labelled **Table 3** or **Room 105**.
+3. The cashier taps **Accept**, then **Food is up** when the kitchen is done.
+4. **Serve the table** (paid at the till) or **Deliver** to the room (**the money lands
+   on the room bill automatically**), then **Close & collect**.
+5. At checkout the cashier taps **Paid & release** — the room turns **purple (needs
+   cleaning)** and the cleaning alarm rings at the desk
    (most housekeepers here have no phone, so the cashier can see the room number and
    pass it on). When the room is done, either the housekeeper taps **Cleaned** on her
    board or the cashier taps **Cleaned** on the room — it turns **green (free)** again.
@@ -104,12 +98,31 @@ clean turns it blue, finishing turns it green (or inspected).
 
 ### Receipts
 
-At checkout the cashier taps **Print receipt** and a clean paper receipt comes out:
-hotel letterhead, room, guest, itemised room-nights, food and services, payments and the
-balance. It looks like the hotel's official receipt but adds **no tax lines** — it is the
-demo/system receipt, not the fiscal one. Printing goes through the browser's print
-dialog, so **any USB thermal receipt printer (80 mm) or captain order printer the
-computer already knows works**; "Save as PDF" keeps an electronic copy.
+The receipt is laid out like the hotel's official paper slip — TIN, business name,
+address, telephone, **FS No.**, invoice code, `Description / Qty / Price / AMOUNT` rows,
+a big **TOTAL** and the payment line — but it adds **no tax lines and no QR block**:
+it is the demo/system receipt, not the fiscal one.
+
+The head and foot are a **form in the admin** (*Receipt template*): TIN, business name,
+address lines, telephone, invoice title, the next FS number and two footer lines. Every
+time the cashier taps **Print** the receipt claims the next FS number and prints on the
+order printer — the browser print dialog works with **any USB thermal receipt printer
+(80 mm)** the computer already knows; "Save as PDF" keeps an electronic copy. Order
+receipts (with totals) print the same way from the live-orders cards and the orders desk.
+
+### Tables & QR codes
+
+Every **table** and every **room** has its own unique QR code. The admin adds tables
+(*Tables & QR*), names them and prints the code sheet; guests at a table scan, see the
+menu (with photos) and order exactly like a room order. Table orders appear **below the
+rectangular rooms on the cashier dashboard**, labelled **Table N**, and are collected at
+the till instead of landing on a room bill.
+
+### Menu
+
+The admin builds the menu: categories, and items with **photo, name, description,
+price, station and category** — edit or remove any item. Photos show on the guest
+menu; removed items stay on old bills but leave the menu.
 
 ### Nothing is charged twice
 

@@ -5,7 +5,7 @@ import { computeRoomCharge, BILLING_MODES } from '../../../shared/billing.js';
 import { money, formatElapsed, formatCountdown, initials, dateTimeOf, toLocalInput, fromLocalInput, relative } from '../lib/format.js';
 import { Icon } from '../lib/icons.jsx';
 import { Modal, Drawer, Field, Pill, Empty, Stat } from '../lib/ui.jsx';
-import { NewOrderModal } from '../components/OrderPieces.jsx';
+import { NewOrderModal, OrderDetailModal } from '../components/OrderPieces.jsx';
 import { ReceiptModal } from '../components/Receipt.jsx';
 
 const TILE = {
@@ -42,6 +42,7 @@ export default function Rooms() {
   const [checkinRoomId, setCheckinRoomId] = useState(null);
   const [orderRoomId, setOrderRoomId] = useState(null);
   const [showOrder, setShowOrder] = useState(false);
+  const [detailOrderId, setDetailOrderId] = useState(null);
   const now = useNow(1000);
 
   useEffect(() => {
@@ -201,6 +202,10 @@ export default function Rooms() {
         </div>
       )}
 
+      <OpenOrdersStrip onOpen={(id) => setDetailOrderId(id)} />
+
+      {detailOrderId ? <OrderDetailModal orderId={detailOrderId} onClose={() => setDetailOrderId(null)} /> : null}
+
       {openRoom ? (
         <RoomDrawer
           room={openRoom}
@@ -234,6 +239,105 @@ export default function Rooms() {
         />
       ) : null}
     </>
+  );
+}
+
+/* -------------------------- live orders under the board ------------------- */
+/**
+ * Every order the desk has not closed yet, one card each — labeled by where it
+ * was sent from (Table 3, Room 105, Counter). The next step in the flow is one
+ * tap away; Print opens the receipt slip for the order printer.
+ */
+function OpenOrdersStrip({ onOpen }) {
+  const { orders, toast, loadOrders, settings } = useApp();
+  const [busy, setBusy] = useState('');
+  const [printOrder, setPrintOrder] = useState(null);
+
+  if (settings.hide_dashboard_orders) return null;
+
+  const open = orders.filter((order) => !['completed', 'cancelled'].includes(order.status));
+
+  const act = async (order, action) => {
+    setBusy(order.id + action);
+    try {
+      const paths = {
+        accept: `/orders/${order.id}/accept`,
+        ready: `/orders/${order.id}/ready`,
+        deliver: `/orders/${order.id}/deliver`,
+        close: `/orders/${order.id}/close`,
+      };
+      await api.post(paths[action], action === 'close' ? { paid_method: 'cash' } : {});
+      await loadOrders();
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const nextStep = (order) => {
+    switch (order.status) {
+      case 'new': return ['accept', 'Accept'];
+      case 'accepted': return ['ready', 'Food is up'];
+      case 'sent': return ['ready', 'Food is up'];
+      case 'ready': return ['deliver', order.table_name ? 'Serve the table' : 'Deliver'];
+      case 'delivering': return ['deliver', 'Handed over'];
+      case 'delivered': return ['close', 'Close & collect'];
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="card" style={{ padding: 16, marginTop: 18 }}>
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+        <h3 style={{ margin: 0 }}>Live orders</h3>
+        <span className="muted small">{open.length} open</span>
+      </div>
+      {open.length === 0 ? (
+        <Empty title="No open orders" icon="receipt" />
+      ) : (
+        <div className="grid grid-4">
+          {open.map((order) => {
+            const step = nextStep(order);
+            return (
+              <div className="order-card" key={order.id}>
+                <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <button className="order-place" onClick={() => onOpen(order.id)}>
+                    {order.table_name ? order.table_name : order.room_id ? `Room ${order.room_number}` : 'Counter'}
+                  </button>
+                  <Pill status={order.status}>{order.status}</Pill>
+                </div>
+                <div className="tiny muted">#{order.code} · {order.items.length} item(s)</div>
+                <div className="small" style={{ margin: '6px 0' }}>
+                  {order.items.slice(0, 3).map((item) => `${item.qty}× ${item.name}`).join(' · ')}
+                  {order.items.length > 3 ? '…' : ''}
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong>{money(order.total)}</strong>
+                  <div className="row" style={{ gap: 6 }}>
+                    <button className="btn btn-sm" onClick={() => setPrintOrder(order)} title="Print receipt">
+                      <Icon name="print" size={13} />
+                    </button>
+                    {step ? (
+                      <button
+                        className={`btn btn-sm ${step[0] === 'accept' || step[0] === 'close' ? 'btn-primary' : ''}`}
+                        disabled={busy === order.id + step[0]}
+                        onClick={() => act(order, step[0])}
+                      >
+                        {step[1]}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {printOrder ? (
+        <ReceiptModal order={printOrder} title={`Receipt · #${printOrder.code}`} onClose={() => setPrintOrder(null)} />
+      ) : null}
+    </div>
   );
 }
 

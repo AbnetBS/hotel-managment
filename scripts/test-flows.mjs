@@ -11,59 +11,87 @@ let pass = 0, fail = 0;
 const check = (label, ok, extra = '') => { console.log(`${ok ? '✅' : '❌'} ${label}${extra ? ' — ' + extra : ''}`); ok ? pass++ : fail++; };
 
 const cashier = await login('cashier');
-const pastry = await login('pastry');
-const hk = await login('housekeeping');
+const admin = await login('admin');
 
-// 1. pastry is a real station
-const boot = await api(pastry, '/bootstrap');
-check('pastry station account loads its own board', boot.status === 200 && boot.body.user?.role === 'pastry', `role=${boot.body.user?.role}`);
+/* ------------------------------ the two roles ----------------------------- */
 
-// 2. pastry items exist and are routed to pastry
-const menu = await api(cashier, '/bootstrap');
-const pastryItems = (menu.body.menu?.items || []).filter((i) => i.station === 'pastry');
-check('cake & pastry items are routed to the pastry station', pastryItems.length >= 5, `${pastryItems.length} items e.g. ${pastryItems[0]?.name}`);
+const cashBoot = await api(cashier, '/bootstrap');
+check('cashier signs in as the desk account', cashBoot.status === 200 && cashBoot.body.user?.role === 'cashier', `role=${cashBoot.body.user?.role}`);
+const adminBoot = await api(admin, '/bootstrap');
+check('admin signs in and gets the admin board', adminBoot.status === 200 && adminBoot.body.user?.role === 'admin', `role=${adminBoot.body.user?.role}`);
 
-// 3. an order with cake reaches pastry
+const menu = adminBoot.body.menu || {};
+check('the menu has items and categories', (menu.items || []).length > 0 && (menu.categories || []).length > 0, `${menu.items?.length} items`);
+
+/* ------------------------------ table ordering ---------------------------- */
+
+const tables = (await api(cashier, '/tables')).body.tables || [];
+check('the hotel has tables with unique QR tokens', tables.length > 0 && new Set(tables.map((t) => t.qr_token)).size === tables.length, `${tables.length} tables`);
+const table = tables[0];
+
+const publicMenu = await (await fetch(`${base}/api/public/menu/${table.qr_token}`)).json();
+check('a table QR opens the menu with no room', Array.isArray(publicMenu.items) && publicMenu.table?.name === table.name, `table=${publicMenu.table?.name} items=${publicMenu.items?.length}`);
+
+const food = publicMenu.items.find((i) => i.station === 'kitchen') || publicMenu.items[0];
+const tableOrder = await (await fetch(`${base}/api/public/order/${table.qr_token}`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ items: [{ menu_item_id: food.id, qty: 2 }] }),
+})).json();
+check('a table order is sent to the desk', Boolean(tableOrder.order?.code), `order #${tableOrder.order?.code} · ${tableOrder.order?.items} item(s)`);
+
+const openList = (await api(cashier, '/orders')).body.orders || [];
+const live = openList.find((o) => o.code === tableOrder.order?.code);
+check('the order shows its table name on the desk board', live?.table_name === table.name, `label=${live?.table_name || live?.place}`);
+
+const orderId = live?.id;
+await api(cashier, `/orders/${orderId}/accept`, { method: 'POST', body: '{}' });
+const ready = await api(cashier, `/orders/${orderId}/ready`, { method: 'POST', body: '{}' });
+check('Food is up completes every line in one tap', ready.status === 200 && ready.body.order?.allDone, `status=${ready.body.order?.status} itemsDone=${ready.body.order?.items?.every((i) => i.status === 'done')}`);
+const delivered = await api(cashier, `/orders/${orderId}/deliver`, { method: 'POST', body: '{}' });
+check('delivering a table order marks it charged to the till', delivered.status === 200 && delivered.body.charged === false, `charged=${delivered.body.charged} (till)`);
+const closed = await api(cashier, `/orders/${orderId}/close`, { method: 'POST', body: JSON.stringify({ paid_method: 'cash' }) });
+check('the table order closes', closed.status === 200 && closed.body.order?.status === 'completed', `status=${closed.body.order?.status}`);
+
+/* ------------------------------- receipt FS ------------------------------- */
+
+const fs1 = await api(cashier, '/receipt/next-fs', { method: 'POST', body: '{}' });
+const fs2 = await api(cashier, '/receipt/next-fs', { method: 'POST', body: '{}' });
+check('each printed receipt takes the next FS number', fs1.status === 200 && fs2.status === 200 && fs1.body.fs !== fs2.body.fs, `${fs1.body.fs} → ${fs2.body.fs}`);
+
+/* ------------------------------ room ordering ----------------------------- */
+
 const rooms = await api(cashier, '/rooms');
 const busy = rooms.body.rooms.find((r) => r.status === 'occupied');
-const cake = pastryItems.find((i) => /cake|croissant/i.test(i.name));
-const order = await api(cashier, '/orders', { method: 'POST', body: JSON.stringify({ roomId: busy.id, channel: 'outdoor', items: [{ menu_item_id: cake.id, qty: 1 }] }) });
-check('a cake order can be placed to a room', order.status === 200, `order #${order.body.order?.code} → station ${order.body.order?.items?.[0]?.station}`);
-const orderId = order.body.order?.id;
-await api(cashier, `/orders/${orderId}/accept`, { method: 'POST', body: JSON.stringify({ call_confirmed: true }) });
-const sent = await api(cashier, `/orders/${orderId}/send`, { method: 'POST', body: '{}' });
-check('the cake ticket is sent to the pastry station', sent.status === 200, `stations: ${sent.body.order?.stations?.join(', ')}`);
+const item = menu.items.find((i) => i.station === 'kitchen');
+const order = await api(cashier, '/orders', { method: 'POST', body: JSON.stringify({ roomId: busy.id, channel: 'outdoor', items: [{ menu_item_id: item.id, qty: 1 }] }) });
+check('a room order can be placed from the desk', order.status === 200, `order #${order.body.order?.code} → ${order.body.order?.place}`);
+const roomOrderId = order.body.order?.id;
+await api(cashier, `/orders/${roomOrderId}/accept`, { method: 'POST', body: JSON.stringify({ call_confirmed: true }) });
+const sent = await api(cashier, `/orders/${roomOrderId}/send`, { method: 'POST', body: '{}' });
+check('the ticket is sent to the station', sent.status === 200, `stations: ${sent.body.order?.stations?.join(', ')}`);
+await api(cashier, `/orders/${roomOrderId}/ready`, { method: 'POST', body: '{}' });
+const toRoom = await api(cashier, `/orders/${roomOrderId}/deliver`, { method: 'POST', body: '{}' });
+check('delivering to a room charges the folio', toRoom.status === 200 && toRoom.body.charged === true, `charged=${toRoom.body.charged}`);
 
-// 4. pastry sees and finishes it
-const pastryBoard = await api(pastry, '/orders');
-const ticket = (pastryBoard.body.orders || []).find((o) => o.id === orderId);
-check('pastry board shows the ticket with its own item', !!ticket && ticket.items.length === 1, ticket ? `${ticket.items[0].name} · ${ticket.items[0].status}` : 'missing');
-const itemId = ticket?.items?.[0]?.id;
-await api(pastry, `/order-items/${itemId}/accept`, { method: 'POST', body: '{}' });
-const done = await api(pastry, `/order-items/${itemId}/done`, { method: 'POST', body: '{}' });
-check('pastry accept → done works', done.status === 200);
+/* ---------------------- checkout + housekeeping (desk) --------------------- */
 
-// 5. checkout → purple room + housekeeping alarm
 const target = rooms.body.rooms.find((r) => r.status === 'occupied' && r.stay);
 const checkout = await api(cashier, `/stays/${target.stay.id}/checkout`, { method: 'POST', body: JSON.stringify({ payments: [{ amount: 0, method: 'Cash' }], release: true }) });
 check('checkout releases the room', checkout.status === 200);
 const after = await api(cashier, '/rooms');
 const released = after.body.rooms.find((r) => r.id === target.id);
 check('the room turns purple (needs cleaning)', released.status === 'dirty', `status=${released.status}`);
-const tasks = await api(hk, '/housekeeping');
-const task = (tasks.body.tasks || []).find((t) => t.room_id === target.id && t.status !== 'completed');
+const tasks = (await api(cashier, '/housekeeping')).body.tasks || [];
+const task = tasks.find((t) => t.room_id === target.id && t.status !== 'completed');
 check('housekeeping got a task for that room', !!task, task ? `${task.type} · ${task.status}` : 'missing');
 
-// 6. housekeeper starts (blue) then finishes (green)
-await api(hk, `/housekeeping/${task.id}/advance`, { method: 'POST', body: '{}' });
+await api(cashier, `/housekeeping/${task.id}/advance`, { method: 'POST', body: '{}' });
 const mid = (await api(cashier, '/rooms')).body.rooms.find((r) => r.id === target.id);
 check('starting the clean turns the room blue (cleaning)', mid.status === 'cleaning', `status=${mid.status}`);
-const fin = await api(hk, `/housekeeping/${task.id}/advance`, { method: 'POST', body: '{}' });
+await api(cashier, `/housekeeping/${task.id}/advance`, { method: 'POST', body: '{}' });
 const free = (await api(cashier, '/rooms')).body.rooms.find((r) => r.id === target.id);
 check('finishing the clean turns the room green again', free.status === 'available', `status=${free.status}`);
 
-// 7. the cashier can do it for a housekeeper with no phone, and mark "inspected"
-// make another room dirty the honest way: check out a second guest
 const another = (await api(cashier, '/rooms')).body.rooms.find((r) => r.status === 'occupied' && r.stay && r.id !== target.id);
 if (another) await api(cashier, `/stays/${another.stay.id}/checkout`, { method: 'POST', body: JSON.stringify({ payments: [{ amount: 0, method: 'Cash' }], release: true }) });
 const second = (await api(cashier, '/rooms')).body.rooms.find((r) => r.status === 'dirty');
@@ -75,13 +103,15 @@ if (second) {
   check('the cashier can mark a room cleaned from her own screen', false, 'no dirty room available');
 }
 
-// 8. the guest sees the full bill (room + food + paid + balance)
+/* ------------------------------- guest bill ------------------------------- */
+
 const guestRoom = (await api(cashier, '/rooms')).body.rooms.find((r) => r.stay);
 const guestBill = await (await fetch(`${base}/api/public/bill/${guestRoom.qr_token}`)).json();
 check('the guest bill includes the room and the totals', !!guestBill.bill?.room && guestBill.bill.total > 0,
   guestBill.bill ? `room ${guestBill.bill.room.line} · total ${guestBill.bill.total} · balance ${guestBill.bill.balance}` : 'no bill');
 
-// 9. reservations cannot double-book a room
+/* ------------------------------- reservations ----------------------------- */
+
 const dateIn = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 const dateOut = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
 const freeRoom = (await api(cashier, '/rooms')).body.rooms.find((r) => r.status === 'available');
@@ -90,25 +120,21 @@ const second2 = await api(cashier, '/reservations', { method: 'POST', body: JSON
 check('a second booking on the same room and dates is refused', second2.status === 409,
   second2.body.error ? `${second2.body.error} alternatives: ${(second2.body.alternatives || []).join(', ') || 'none'}` : `status ${second2.status}`);
 
-
 /* ------------------- duplicate protection (dropped connection) ------------- */
 
 const dupRoom = (await api(cashier, '/rooms')).body.rooms.find((r) => r.stay);
 const dupRef = 'test-ref-' + Date.now();
 
-// the same payment sent twice (the tablet retried) lands once
 const p1 = await api(cashier, `/stays/${dupRoom.stay.id}/payment`, { method: 'POST', body: JSON.stringify({ amount: 100, method: 'Cash', client_ref: dupRef }) });
 const p2 = await api(cashier, `/stays/${dupRoom.stay.id}/payment`, { method: 'POST', body: JSON.stringify({ amount: 100, method: 'Cash', client_ref: dupRef }) });
 check('a retried payment is stored once', p1.status === 200 && p2.status === 200 && p2.body.duplicate === true, `second reply duplicate=${p2.body.duplicate}`);
 
-// the same guest order sent twice (weak Wi-Fi) is one order
 const dupMenu = (await api(cashier, '/bootstrap')).body.menu.items.find((i) => i.station === 'kitchen');
 const orderRef = 'test-order-' + Date.now();
 const o1 = await api(cashier, '/orders', { method: 'POST', body: JSON.stringify({ roomId: dupRoom.id, channel: 'outdoor', client_ref: orderRef, items: [{ menu_item_id: dupMenu.id, qty: 1 }] }) });
 const o2 = await api(cashier, '/orders', { method: 'POST', body: JSON.stringify({ roomId: dupRoom.id, channel: 'outdoor', client_ref: orderRef, items: [{ menu_item_id: dupMenu.id, qty: 1 }] }) });
 check('a double-tapped order is created once', o1.status === 200 && o1.body.order.code === o2.body.order.code, `${o1.body.order?.code} = ${o2.body.order?.code}`);
 
-// paying and releasing twice is refused the second time
 const checkoutRef = 'test-checkout-' + Date.now();
 const c1 = await api(cashier, `/stays/${dupRoom.stay.id}/checkout`, { method: 'POST', body: JSON.stringify({ client_ref: checkoutRef, release: true, payments: [] }) });
 const c2 = await api(cashier, `/stays/${dupRoom.stay.id}/checkout`, { method: 'POST', body: JSON.stringify({ client_ref: checkoutRef, release: true, payments: [] }) });

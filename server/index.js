@@ -121,7 +121,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  ─────────────────────────`);
   console.log(`  API + app      http://localhost:${PORT}`);
   console.log(`  Database       ${DB_DRIVER === 'pg' ? 'PostgreSQL (DATABASE_URL)' : DB_PATH}`);
-  console.log(`  Demo logins    admin / manager / cashier / waiter / kitchen / pastry / barista / juice / housekeeping  ·  PIN 1234`);
+  console.log(`  Demo logins    admin / cashier  ·  PIN 1234`);
   if (created) console.log(`  ✓ First run: demo hotel created`);
   console.log('');
 });

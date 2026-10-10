@@ -21,7 +21,7 @@ export function revenueSummary({ from, to } = {}) {
   const discounts = Math.abs(sum(['discount']));
   const payments = Math.abs(sum(['payment']));
 
-  const counterOrders = db.prepare(`SELECT * FROM orders WHERE channel = 'counter' AND charged = 1 AND status = 'completed'
+  const counterOrders = db.prepare(`SELECT * FROM orders WHERE channel IN ('counter','table') AND charged = 1 AND status = 'completed'
                                      AND substr(closed_at, 1, 10) BETWEEN ? AND ?`).all(range.from, range.to);
   const counterSales = counterOrders.reduce((s, o) => s + o.total, 0);
 

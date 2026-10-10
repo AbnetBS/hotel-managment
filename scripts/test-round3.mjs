@@ -27,9 +27,9 @@ const check = (label, ok, extra = '') => {
 };
 
 const cashier = await login('cashier');
-const manager = await login('manager');
+const manager = await login('admin');
 const admin = await login('admin');
-const hk = await login('housekeeping');
+const hk = await login('cashier');
 const maintenance = await login('meron'); // the maintenance host's account
 
 const rooms = (await api(manager, '/rooms')).body.rooms;
@@ -100,13 +100,13 @@ check('normal payments need no approval', noApproval.status === 200);
 const needsIt = await api(cashier, '/approvals/needed?amount=5000&percent=40');
 check('a big discount is flagged as needing approval', needsIt.body.needed === true);
 
-const wrongPin = await api(cashier, '/approvals', { method: 'POST', body: JSON.stringify({ kind: 'discount', amount: 5000, managerUsername: 'manager', managerPin: '0000' }) });
+const wrongPin = await api(cashier, '/approvals', { method: 'POST', body: JSON.stringify({ kind: 'discount', amount: 5000, managerUsername: 'admin', managerPin: '0000' }) });
 check('a wrong manager PIN is refused', wrongPin.status === 400, wrongPin.body.error || '');
 
 const cashierTries = await api(cashier, '/approvals', { method: 'POST', body: JSON.stringify({ kind: 'discount', amount: 5000, managerUsername: 'cashier', managerPin: '1234' }) });
 check('another cashier cannot approve their own discount', cashierTries.status === 400, cashierTries.body.error || '');
 
-const approved = await api(cashier, '/approvals', { method: 'POST', body: JSON.stringify({ kind: 'discount', amount: 5000, managerUsername: 'manager', managerPin: '1234', detail: 'Long-stay discount' }) });
+const approved = await api(cashier, '/approvals', { method: 'POST', body: JSON.stringify({ kind: 'discount', amount: 5000, managerUsername: 'admin', managerPin: '1234', detail: 'Long-stay discount' }) });
 check('a manager PIN grants the approval', approved.status === 200 && approved.body.approvedBy, approved.body.approvedBy || approved.body.error);
 
 /* -------------------------- 11 + 12. inventory & recipes ------------------ */
@@ -126,7 +126,7 @@ const menu = (await api(cashier, '/bootstrap')).body.menu.items.find((item) => /
 const order = await api(cashier, '/orders', { method: 'POST', body: JSON.stringify({ roomId: busy.id, channel: 'outdoor', items: [{ menu_item_id: menu.id, qty: 2 }] }) });
 const orderId = order.body.order.id;
 const orderItems = (await api(cashier, '/orders')).body.orders.find((row) => row.id === orderId).items;
-const kitchen = await login('kitchen');
+const kitchen = await login('cashier');
 await api(kitchen, `/order-items/${orderItems[0].id}/accept`, { method: 'POST', body: '{}' });
 await api(kitchen, `/order-items/${orderItems[0].id}/done`, { method: 'POST', body: '{}' });
 const after = (await api(admin, '/admin/inventory')).body.items.find((item) => item.id === 'inv-chicken');
@@ -213,7 +213,7 @@ check('a big discount cannot be taken without a manager', bigDiscount.status ===
 
 const discountApproval = await api(cashier, '/approvals', {
   method: 'POST',
-  body: JSON.stringify({ kind: 'discount', amount: 4000, managerUsername: 'manager', managerPin: '1234', detail: 'Goodwill' }),
+  body: JSON.stringify({ kind: 'discount', amount: 4000, managerUsername: 'admin', managerPin: '1234', detail: 'Goodwill' }),
 });
 const allowed = await api(cashier, `/stays/${usdCheckin.body.stayId}/checkout`, {
   method: 'POST',

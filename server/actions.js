@@ -225,7 +225,7 @@ export function checkOutStay({ stayId, unitsOverride, discount, payments = [], r
 
 /* -------------------------------- orders ---------------------------------- */
 
-export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], note, guestName, clientRef, actor }) {
+export function createOrder({ roomId, stayId, tableId, channel = 'outdoor', items = [], note, guestName, clientRef, actor }) {
   if (clientRef) {
     const seen = db.prepare('SELECT * FROM orders WHERE client_ref = ?').get(clientRef);
     // The guest's phone sent this already (bad signal, double tap): send back the same order.
@@ -248,11 +248,13 @@ export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], n
   let room = roomId ? roomById(roomId) : null;
   if (!stay && room) stay = activeStayForRoom(room.id);
   if (!room && stay) room = roomById(stay.room_id);
+  const table = tableId ? db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId) : null;
 
-  const isCounter = channel === 'counter';
+  const isCounter = channel === 'counter' || channel === 'table';
   if (!isCounter && !stay) {
     return { error: 'That room has no active guest. Check the guest in first, or take a walk-in order.' };
   }
+  if (channel === 'table' && !table) return { error: 'Table not found.' };
 
   const total = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0);
   const orderId = id('o');
@@ -260,10 +262,10 @@ export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], n
   const createdAt = nowIso();
   const guestRow = stay ? db.prepare('SELECT * FROM guests WHERE id = ?').get(stay.guest_id) : null;
 
-  db.prepare(`INSERT INTO orders (id, code, room_id, stay_id, guest_name, channel, status, note, total, call_confirmed, charged, client_ref, branch_id, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, 0, 0, ?, ?, ?, ?)`).run(
-    orderId, code, room?.id || null, stay?.id || null,
-    guestName || guestRow?.full_name || (isCounter ? 'Walk-in guest' : 'In-house guest'),
+  db.prepare(`INSERT INTO orders (id, code, room_id, stay_id, table_id, guest_name, channel, status, note, total, call_confirmed, charged, client_ref, branch_id, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, 0, 0, ?, ?, ?, ?)`).run(
+    orderId, code, room?.id || null, stay?.id || null, table?.id || null,
+    guestName || guestRow?.full_name || (table ? table.name : isCounter ? 'Walk-in guest' : 'In-house guest'),
     channel, note || null, total, clientRef || null, room?.branch_id || null, createdAt, actor?.id || 'guest-qr',
   );
 
@@ -273,15 +275,15 @@ export function createOrder({ roomId, stayId, channel = 'outdoor', items = [], n
     insertItem.run(id('oi'), orderId, line.menu_item_id, line.name, line.name_am, line.qty, line.unit_price, line.station, line.note);
   }
 
-  const channelLabel = channel === 'qr' ? 'QR order from room' : channel === 'outdoor' ? 'Phone / room-service order' : 'Counter order';
-  logEvent(orderId, actor?.name || (channel === 'qr' ? `Room ${room?.number} guest (QR)` : 'Cashier'), 'created', `${channelLabel} · #${code}`);
+  const channelLabel = channel === 'qr' ? 'QR order from room' : channel === 'table' ? `QR order · ${table.name}` : channel === 'outdoor' ? 'Phone / room-service order' : 'Counter order';
+  logEvent(orderId, actor?.name || (channel === 'qr' ? `Room ${room?.number} guest (QR)` : table ? `${table.name} guest (QR)` : 'Cashier'), 'created', `${channelLabel} · #${code}`);
 
   const view = orderView(orderId);
   publish(['orders', 'rooms']);
-  publishToRoles(['cashier', 'admin', 'manager'], {
+  publishToRoles(['cashier', 'admin'], {
     type: 'alert',
     kind: 'order.new',
-    title: room ? `New order · Room ${room.number}` : 'New counter order',
+    title: `New order · ${view.place}`,
     order: view,
     at: Date.now(),
   });
@@ -346,12 +348,26 @@ export function completeOrderItem({ itemId, actor }) {
     db.prepare("UPDATE orders SET status = 'ready', ready_at = ? WHERE id = ?").run(nowIso(), item.order_id);
     logEvent(item.order_id, 'System', 'ready', 'All items ready — cashier can send the waiter');
     order = orderView(item.order_id);
-    publishToRoles(['cashier', 'waiter', 'admin', 'manager'], {
-      type: 'alert', kind: 'order.ready', title: `Ready to deliver · order #${order.code} · Room ${order.room_number}`, order, at: Date.now(),
+    publishToRoles(['cashier', 'admin'], {
+      type: 'alert', kind: 'order.ready', title: `Ready to deliver · order #${order.code} · ${order.place}`, order, at: Date.now(),
     });
   }
   publish(['orders']);
   return { order };
+}
+
+/**
+ * The food is up: mark every line ready in one tap. With the desk running the
+ * whole service there are no separate station screens to tick items one by one.
+ */
+export function readyOrder({ orderId, actor }) {
+  const order = orderView(orderId);
+  if (!order) return { error: 'Order not found.' };
+  if (!['new', 'accepted', 'sent'].includes(order.status)) return { error: `Order #${order.code} is already past the kitchen.` };
+  for (const item of db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('done','served')").all(orderId)) {
+    completeOrderItem({ itemId: item.id, actor });
+  }
+  return { order: orderView(orderId) };
 }
 
 export function sendWaiter({ orderId, actor }) {
@@ -362,8 +378,8 @@ export function sendWaiter({ orderId, actor }) {
   logEvent(orderId, actor?.name || 'Cashier', 'waiter-sent', 'Waiter sent to deliver to the room');
   const view = orderView(orderId);
   publish(['orders']);
-  publishToRoles(['waiter', 'admin', 'manager', 'cashier'], {
-    type: 'alert', kind: 'order.delivering', title: `Deliver now · order #${order.code} · Room ${view.room_number}`, order: view, at: Date.now(),
+  publishToRoles(['cashier', 'admin'], {
+    type: 'alert', kind: 'order.delivering', title: `Deliver now · order #${order.code} · ${view.place}`, order: view, at: Date.now(),
   });
   return { order: view };
 }
@@ -377,7 +393,7 @@ export function deliverOrder({ orderId, actor }) {
   const charge = chargeOrderToFolio({ orderId, actor });
   const view = orderView(orderId);
   publish(['orders', 'folios', 'rooms', 'stays', 'reports']);
-  publishToRoles(['cashier', 'admin', 'manager'], {
+  publishToRoles(['cashier', 'admin'], {
     type: 'alert', kind: 'order.delivered',
     title: `Order #${view.code} delivered · ${charge?.charged ? 'added to the room bill' : 'pay at the till'}`,
     order: view, at: Date.now(),
@@ -564,7 +580,7 @@ export function createCheckinRequest({ roomId, payload, note, source = 'qr' }) {
     .run(rid, roomId || null, JSON.stringify(payload || {}), note || `Self registration · ${source}`, nowIso());
   const room = roomId ? roomById(roomId) : null;
   publish(['checkinRequests']);
-  publishToRoles(['cashier', 'admin', 'manager'], {
+  publishToRoles(['cashier', 'admin'], {
     type: 'alert', kind: 'checkin.request',
     title: `New guest registration${room ? ` · Room ${room.number}` : ''}`,
     payload, requestId: rid, at: Date.now(),

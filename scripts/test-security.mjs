@@ -41,7 +41,7 @@ for (let i = 0; i < 20; i += 1) {
   if (r.status === 429) { throttled = true; break; }
 }
 check('guessing PINs gets rate limited', throttled);
-const stillIn = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'manager', pin: '1234' }) });
+const stillIn = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'cashier', pin: '1234' }) });
 check('real staff can still sign in during an attack', stillIn.status === 200, `status ${stillIn.status}`);
 const realWrong = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'cashier', pin: '0000' }) });
 check('one wrong PIN on a real account is just refused', realWrong.status === 401, `status ${realWrong.status}`);
@@ -71,7 +71,7 @@ const patched = await patch.json();
 check('mass assignment cannot flip a stay status or role', patched.stay?.status === 'active' && patched.stay?.rate === 1234, `status=${patched.stay?.status} rate=${patched.stay?.rate}`);
 
 // uploads refuse anything that is not an image
-const badUpload = await fetch(base + '/api/admin/uploads', { method: 'POST', headers: { 'content-type': 'application/json', 'x-clove-token': (await (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'manager', pin: '1234' }) })).json()).token }, body: JSON.stringify({ data_url: 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==', filename: 'evil.html' }) });
+const badUpload = await fetch(base + '/api/admin/uploads', { method: 'POST', headers: { 'content-type': 'application/json', 'x-clove-token': (await (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', pin: '1234' }) })).json()).token }, body: JSON.stringify({ data_url: 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==', filename: 'evil.html' }) });
 check('uploads refuse non-image payloads', badUpload.status === 400, `status ${badUpload.status}`);
 
 console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed`);

@@ -3,7 +3,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
-import { db, allSettings, nowIso, id, audit, ID_DIR } from './db.js';
+import { db, allSettings, setSetting, nowIso, id, audit, ID_DIR } from './db.js';
 import { login, logout, requireAuth, requireRole, userForToken } from './auth.js';
 import * as repo from './repo.js';
 import * as actions from './actions.js';
@@ -229,6 +229,10 @@ core.post('/orders/:id/send', requireAuth, requireRole('cashier', 'manager', 'ad
 
 core.post('/orders/:id/send-waiter', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
   fail(res, actions.sendWaiter({ orderId: req.params.id, actor: req.user }));
+});
+
+core.post('/orders/:id/ready', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
+  fail(res, actions.readyOrder({ orderId: req.params.id, actor: req.user }));
 });
 
 core.post('/orders/:id/deliver', requireAuth, requireRole('waiter', 'cashier', 'manager', 'admin'), (req, res) => {
@@ -489,14 +493,37 @@ core.get('/reports/guests', requireAuth, requireRole('manager', 'admin', 'cashie
   res.json({ guests: guestHistory({ search: req.query.search }) });
 });
 
+/* -------------------------------- tables --------------------------------- */
+
+core.get('/tables', requireAuth, (req, res) => res.json({ tables: repo.tables() }));
+
+/** The next FS number for a printed receipt — the counter moves on every print. */
+core.post('/receipt/next-fs', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
+  const current = String(allSettings().receipt_fs || '00000000');
+  const asNumber = Number.parseInt(current, 10);
+  const next = Number.isFinite(asNumber) ? asNumber + 1 : 1;
+  const width = current.length >= 6 ? current.length : 8;
+  const upcoming = String(next).padStart(width, '0');
+  setSetting('receipt_fs', upcoming);
+  res.json({ fs: current });
+});
+
 /* ------------------------------ QR codes --------------------------------- */
 
 core.get('/qr/:roomId.png', requireAuth, guarded(async (req, res) => {
+  let token = null;
+  let target = req.query.target === 'register' ? 'r' : 'q';
   const room = db.prepare('SELECT * FROM rooms WHERE id = ? OR number = ?').get(req.params.roomId, req.params.roomId);
-  if (!room) return res.status(404).json({ error: 'Room not found.' });
-  const target = req.query.target === 'register' ? 'r' : 'q';
+  if (room) {
+    token = room.qr_token;
+  } else {
+    const table = db.prepare('SELECT * FROM tables WHERE id = ? OR name = ?').get(req.params.roomId, req.params.roomId);
+    if (!table) return res.status(404).json({ error: 'Room or table not found.' });
+    token = table.qr_token;
+    target = 'q'; // tables always open the menu
+  }
   const base = String(req.query.base || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-  const url = `${base}/${target}/${room.qr_token}`;
+  const url = `${base}/${target}/${token}`;
   const png = await QRCode.toBuffer(url, { width: 512, margin: 1, color: { dark: '#163536', light: '#ffffff' } });
   res.type('png').send(png);
 }));
@@ -680,9 +707,23 @@ core.get('/public/room/:token', (req, res) => {
 });
 
 core.get('/public/menu/:token', (req, res) => {
-  const room = roomByToken(req.params.token);
-  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room any more.' });
   const menu = repo.menu();
+  const table = repo.tableByToken(req.params.token);
+  if (table) {
+    const settings = allSettings();
+    return res.json({
+      hotel: {
+        name: settings.hotel_name, line: settings.property_line, phone: settings.phone,
+        currency: settings.currency,
+      },
+      table: { id: table.id, name: table.name },
+      room: null, stay: null, bill: null,
+      categories: menu.categories.filter((c) => c.active),
+      items: menu.items.filter((i) => i.available),
+    });
+  }
+  const room = roomByToken(req.params.token);
+  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room or table any more.' });
   res.json({
     ...guestRoomPayload(room),
     categories: menu.categories.filter((c) => c.active),
@@ -691,13 +732,27 @@ core.get('/public/menu/:token', (req, res) => {
 });
 
 core.post('/public/order/:token', (req, res) => {
+  const lines = (req.body?.items || []).map((i) => ({ menu_item_id: i.menu_item_id, qty: i.qty, note: i.note }));
+  const table = repo.tableByToken(req.params.token);
+  if (table) {
+    const result = actions.createOrder({
+      tableId: table.id, channel: 'table', note: req.body?.note, clientRef: req.body?.client_ref,
+      guestName: table.name, items: lines,
+    });
+    if (result.error) return res.status(400).json(result);
+    return res.json({
+      order: { code: result.order.code, total: result.order.total, items: result.order.items.length },
+      duplicate: result.duplicate || undefined,
+      message: 'Your order was sent to the desk.',
+    });
+  }
   const room = roomByToken(req.params.token);
-  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room any more.' });
+  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room or table any more.' });
   const stay = actions.activeStayForRoom(room.id);
   if (!stay) return res.status(400).json({ error: 'This room is not checked in yet. Please order at the reception desk.' });
   const result = actions.createOrder({
     stayId: stay.id, roomId: room.id, channel: 'qr', note: req.body?.note, clientRef: req.body?.client_ref,
-    items: (req.body?.items || []).map((i) => ({ menu_item_id: i.menu_item_id, qty: i.qty, note: i.note })),
+    items: lines,
   });
   if (result.error) return res.status(400).json(result);
   res.json({

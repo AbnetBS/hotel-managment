@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../lib/api.js';
+import { api, uploadPhoto } from '../lib/api.js';
 import { useApp } from '../lib/store.jsx';
 import { Icon } from '../lib/icons.jsx';
 import { money } from '../lib/format.js';
@@ -82,7 +82,7 @@ export default function AdminMenu() {
               {items.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    <strong>{item.emoji} {item.name}</strong>
+                    <strong>{item.photo ? <img src={item.photo} alt="" style={{ width: 34, height: 26, objectFit: 'cover', borderRadius: 6, verticalAlign: 'middle', marginRight: 8, border: '1px solid var(--line)' }} /> : null}{item.emoji} {item.name}</strong>
                     
                   </td>
                   <td className="small">{menu.categories.find((category) => category.id === item.category_id)?.name || '—'}</td>
@@ -164,7 +164,7 @@ function ItemModal({ value, categories, onClose, onDone }) {
             disabled={!form.name}
             onClick={async () => {
               const payload = {
-                name: form.name, description: form.description, emoji: form.emoji,
+                name: form.name, description: form.description, emoji: form.emoji, photo: form.photo || null,
                 price: Number(form.price) || 0, category_id: form.category_id, station: form.station,
                 prep_minutes: Number(form.prep_minutes) || 15,
               };
@@ -215,6 +215,34 @@ function ItemModal({ value, categories, onClose, onDone }) {
         </Field>
         <Field label="Description" full>
           <input value={form.description || ''} onChange={(event) => set('description')(event.target.value)} />
+        </Field>
+        <Field label="Photo" full>
+          <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+            {form.photo ? <img src={form.photo} alt="" style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} /> : null}
+            <label className="btn btn-sm" style={{ cursor: 'pointer' }}>
+              <Icon name="upload" size={13} /> {form.photo ? 'Change photo' : 'Upload photo'}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const { url } = await uploadPhoto(file);
+                    set('photo')(url);
+                  } catch (error) {
+                    toast(error.message, 'error');
+                  }
+                }}
+              />
+            </label>
+            {form.photo ? (
+              <button className="btn btn-sm" onClick={() => set('photo')(null)}>
+                <Icon name="trash" size={13} /> Remove photo
+              </button>
+            ) : null}
+          </div>
         </Field>
       </div>
     </Modal>

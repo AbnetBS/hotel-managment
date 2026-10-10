@@ -159,7 +159,8 @@ export function menu() {
     .map((c) => ({ id: c.id, name: c.name, name_am: c.name_am, station: c.station, sort: c.sort, active: !!c.active }));
   const items = db.prepare('SELECT * FROM menu_items ORDER BY sort, name').all().map((i) => ({
     id: i.id, name: i.name, name_am: i.name_am, description: i.description, price: i.price,
-    category_id: i.category_id, station: i.station, prep_minutes: i.prep_minutes, available: !!i.available, emoji: i.emoji, sort: i.sort,
+    category_id: i.category_id, station: i.station, prep_minutes: i.prep_minutes, available: !!i.available,
+    emoji: i.emoji, photo: i.photo || null, sort: i.sort,
   }));
   return { categories, items };
 }
@@ -175,6 +176,7 @@ export function orderView(rowOrId) {
   const row = typeof rowOrId === 'string' ? db.prepare('SELECT * FROM orders WHERE id = ?').get(rowOrId) : rowOrId;
   if (!row) return null;
   const room = row.room_id ? db.prepare('SELECT * FROM rooms WHERE id = ?').get(row.room_id) : null;
+  const table = row.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(row.table_id) : null;
   const items = orderItems(row.id);
   const stations = [...new Set(items.map((i) => i.station))];
   const allDone = items.length > 0 && items.every((i) => i.status === 'done' || i.status === 'served');
@@ -182,6 +184,8 @@ export function orderView(rowOrId) {
     id: row.id, code: row.code, channel: row.channel, status: row.status, note: row.note, total: row.total,
     call_confirmed: !!row.call_confirmed, charged: !!row.charged, cancel_reason: row.cancel_reason,
     room_id: row.room_id, room_number: room?.number || '—', stay_id: row.stay_id, guest_name: row.guest_name,
+    table_id: row.table_id || null, table_name: table?.name || null,
+    place: table ? table.name : room ? `Room ${room.number}` : 'Counter',
     created_at: row.created_at, accepted_at: row.accepted_at, sent_at: row.sent_at, ready_at: row.ready_at,
     delivering_at: row.delivering_at, delivered_at: row.delivered_at, closed_at: row.closed_at,
     created_by: row.created_by, accepted_by: row.accepted_by, delivered_by: row.delivered_by,
@@ -261,6 +265,16 @@ export function reservations() {
       nights: r.nights, rate: r.rate, source: r.source, status: r.status, deposit: r.deposit, note: r.note,
     };
   });
+}
+
+export function tables() {
+  return db.prepare('SELECT * FROM tables ORDER BY sort, name').all().map((t) => ({
+    id: t.id, name: t.name, seats: t.seats, qr_token: t.qr_token, active: !!t.active, sort: t.sort, created_at: t.created_at,
+  }));
+}
+
+export function tableByToken(token) {
+  return db.prepare('SELECT * FROM tables WHERE qr_token = ?').get(token) || null;
 }
 
 export function users() {

@@ -24,7 +24,7 @@ export function resetAll() {
     'guests', 'menu_items', 'menu_categories', 'rooms', 'room_types', 'registration_fields', 'housekeeping_tasks',
     'guest_requests', 'lost_found', 'inventory_items', 'recipe_items', 'stock_moves', 'purchase_requests',
     'approvals', 'services', 'branches',
-    'maintenance_issues', 'users', 'settings',
+    'maintenance_issues', 'users', 'settings', 'tables',
   ];
   db.foreignKeys(false);
   for (const t of tables) db.wipeTable(t);
@@ -51,6 +51,12 @@ export function seed() {
     wifi_name: 'CloveHouse_Guest',
     wifi_password: 'welcome2026',
     receipt_footer: 'Thank you for staying with us.',
+    receipt_footer2: '',
+    receipt_name: 'CLOVE HOUSE HOTEL',
+    receipt_address: 'Bole Road, Addis Ababa',
+    receipt_phone: 'TEL-+251 11 662 4400',
+    receipt_title: 'CASH INVOICE',
+    receipt_fs: '00162882',
     receipt_tin: 'TIN 0072849155',
     hero_title: 'Stay easy, rest well.',
     hero_tagline: 'Rooms, dining and every guest request — handled in one place.',
@@ -196,21 +202,20 @@ export function seed() {
   /* -------------------------------- users --------------------------------- */
   const staff = [
     ['u-admin', 'Marta Ayele', 'admin', 'admin', '+251 91 120 4455'],
-    ['u-manager', 'Dawit Bekele', 'manager', 'manager', '+251 91 233 8877'],
     ['u-cashier', 'Hana Girma', 'cashier', 'cashier', '+251 92 145 2200'],
     ['u-cashier2', 'Meron Tadesse', 'meron', 'cashier', '+251 93 887 1122'],
-    ['u-waiter', 'Yonas Tesfaye', 'waiter', 'waiter', '+251 91 774 3322'],
-    ['u-kitchen', 'Chef Dawit Molla', 'kitchen', 'kitchen', '+251 91 662 0011'],
-    ['u-barista', 'Bethlehem Alemu', 'barista', 'barista', '+251 92 553 7744'],
-    ['u-juice', 'Samri Fikru', 'juice', 'juice', '+251 93 226 8899'],
-    ['u-pastry', 'Selamawit Bekele', 'pastry', 'pastry', '+251 91 229 8811'],
-    ['u-housekeeping', 'Tigist Mulatu', 'housekeeping', 'housekeeping', '+251 91 445 6677'],
   ];
   const insertUser = db.prepare(`INSERT INTO users (id, name, username, pin_hash, pin_salt, role, phone, active, created_at)
                                  VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`);
   for (const [uid, name, username, role, phone] of staff) {
     const { hash, salt } = hashPin('1234');
     insertUser.run(uid, name, username, hash, salt, role, phone, nowIso());
+  }
+
+  /* -------------------------------- tables -------------------------------- */
+  const insertTable = db.prepare('INSERT INTO tables (id, name, seats, qr_token, active, sort, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)');
+  for (let i = 1; i <= 6; i += 1) {
+    insertTable.run(`tbl-${i}`, `Table ${i}`, 4, randomToken(12), i, nowIso());
   }
 
   /* ------------------------------ room types ------------------------------ */

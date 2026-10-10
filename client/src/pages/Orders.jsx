@@ -43,6 +43,14 @@ export default function Orders() {
         await api.post(`/orders/${order.id}/send`);
         toast(`Order #${order.code} sent — the stations have it now.`);
       }
+      if (action === 'ready') {
+        await api.post(`/orders/${order.id}/ready`);
+        toast(`Order #${order.code} — everything is up.`);
+      }
+      if (action === 'deliver') {
+        await api.post(`/orders/${order.id}/deliver`);
+        toast(`Order #${order.code} ${order.table_name ? 'served' : 'delivered'}.`);
+      }
       if (action === 'confirm') {
         await api.post(`/orders/${order.id}/confirm-call`);
         toast(`Order #${order.code} marked as confirmed with the guest.`);
@@ -137,8 +145,8 @@ export default function Orders() {
 
                   {order.status === 'accepted' ? (
                     <>
-                      <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'send'} onClick={() => act(order, 'send')}>
-                        <Icon name="send" size={13} /> Send to stations
+                      <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'ready'} onClick={() => act(order, 'ready')}>
+                        <Icon name="check" size={13} /> Food is up
                       </button>
                       {!order.call_confirmed ? (
                         <button className="btn btn-sm" onClick={() => act(order, 'confirm')}>
@@ -149,20 +157,27 @@ export default function Orders() {
                   ) : null}
 
                   {order.status === 'sent' ? (
-                    <div className="tiny muted">
-                      {order.items.filter((item) => item.status === 'done').length}/{order.items.length} item(s) finished ·{' '}
-                      {order.stations.map((station) => STATIONS[station]?.label || station).join(', ')}
-                    </div>
+                    <>
+                      <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'ready'} onClick={() => act(order, 'ready')}>
+                        <Icon name="check" size={13} /> Food is up
+                      </button>
+                      <div className="tiny muted">
+                        {order.items.filter((item) => item.status === 'done').length}/{order.items.length} item(s) finished ·{' '}
+                        {order.stations.map((station) => STATIONS[station]?.label || station).join(', ')}
+                      </div>
+                    </>
                   ) : null}
 
                   {order.status === 'ready' ? (
-                    <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'waiter'} onClick={() => act(order, 'waiter')}>
-                      <Icon name="send" size={13} /> Send waiter to Room {order.room_number}
+                    <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'deliver'} onClick={() => act(order, 'deliver')}>
+                      <Icon name="send" size={13} /> {order.table_name ? `Serve ${order.table_name}` : `Deliver to Room ${order.room_number}`}
                     </button>
                   ) : null}
 
                   {order.status === 'delivering' ? (
-                    <div className="tiny muted">With the waiter · {order.charged ? 'On the bill' : 'Charged on delivery'}</div>
+                    <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'deliver'} onClick={() => act(order, 'deliver')}>
+                      <Icon name="check" size={13} /> Handed over
+                    </button>
                   ) : null}
 
                   {order.status === 'delivered' ? (

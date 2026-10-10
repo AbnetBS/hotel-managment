@@ -229,6 +229,17 @@ CREATE TABLE IF NOT EXISTS menu_items (
   sort INTEGER DEFAULT 0
 );
 
+/* ------------------------- tables (QR ordering) -------------------------- */
+CREATE TABLE IF NOT EXISTS tables (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  seats INTEGER DEFAULT 0,
+  qr_token TEXT UNIQUE,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER DEFAULT 0,
+  created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
   code TEXT,
@@ -522,6 +533,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_recipe_menu ON recipe_items(menu_item_id);
 `);
 ensureColumn('orders', 'client_ref', 'TEXT');
+// QR orders can come from a table as well as from a room
+ensureColumn('orders', 'table_id', 'TEXT');
+// menu items can carry a photo on the guest menu
+ensureColumn('menu_items', 'photo', 'TEXT');
 
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_folio_client_ref ON folio_items(client_ref) WHERE client_ref IS NOT NULL;

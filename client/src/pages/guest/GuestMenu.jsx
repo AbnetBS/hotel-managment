@@ -60,6 +60,11 @@ export default function GuestMenu({ token }) {
     if (screen === 'bill') loadBill();
   }, [screen, loadBill]);
 
+  // Table codes open straight on the menu: no bill, no requests — order and pay at the desk.
+  useEffect(() => {
+    if (data?.table) setScreen('menu');
+  }, [data]);
+
   const items = useMemo(() => {
     if (!data) return [];
     return category === 'all' ? data.items : data.items.filter((item) => item.category_id === category);
@@ -85,7 +90,9 @@ export default function GuestMenu({ token }) {
     );
   }
 
-  const { hotel, room, canOrder, requestKinds } = data;
+  const { hotel, room, requestKinds } = data;
+  const isTable = Boolean(data.table);
+  const canOrder = isTable ? true : Boolean(data.canOrder);
   const total = cart.reduce((sum, line) => sum + line.price * line.qty, 0);
 
   const setQty = (item, qty) => {
@@ -122,13 +129,13 @@ export default function GuestMenu({ token }) {
   return (
     <div className="guest">
       <div className="guest-hero">
-        <img src={room.photos?.[0]} alt="" />
+        {room?.photos?.[0] ? <img src={room.photos[0]} alt="" /> : null}
         <div className="guest-wrap">
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <div className="brand-name" style={{ color: '#fff' }}>{String(hotel.name).toUpperCase()}</div>
-            <span className={`pill ${canOrder ? 'available' : 'reserved'}`}><i />Room {room.number}</span>
+            <span className={`pill ${canOrder ? 'available' : 'reserved'}`}><i />{isTable ? data.table.name : `Room ${room?.number || ''}`}</span>
           </div>
-          {screen === 'home' ? (
+          {screen === 'home' && !isTable ? (
             <>
               <h1 style={{ color: '#fff', fontSize: 27, marginTop: 14 }}>Good to see you</h1>
               <p style={{ color: '#d3e6e0', marginTop: 8, fontSize: 13 }}>
@@ -142,7 +149,7 @@ export default function GuestMenu({ token }) {
       </div>
 
       <div className="guest-wrap guest-body">
-        {screen === 'home' ? (
+        {screen === 'home' && !isTable ? (
           <GuestHome
             hotel={hotel}
             room={room}
@@ -177,10 +184,12 @@ export default function GuestMenu({ token }) {
         {screen === 'menu' ? (
           <>
             <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => open('home')}>
-                <Icon name="arrow-left" size={15} /> Back
-              </button>
-              <span className="pill open"><i />Charged to Room {room.number}</span>
+              {!isTable ? (
+                <button className="btn btn-ghost btn-sm" onClick={() => open('home')}>
+                  <Icon name="arrow-left" size={15} /> Back
+                </button>
+              ) : <strong style={{ fontSize: 17 }}>{data.table.name}</strong>}
+              <span className="pill open"><i />{isTable ? 'Pay at the desk' : `Charged to Room ${room?.number}`}</span>
             </div>
 
             {sent ? (
@@ -207,7 +216,11 @@ export default function GuestMenu({ token }) {
                 const line = cart.find((entry) => entry.id === item.id);
                 return (
                   <div className="menu-item" key={item.id}>
-                    <div className="emoji">{item.emoji || '🍽️'}</div>
+                    {item.photo ? (
+                      <img className="emoji" src={item.photo} alt="" style={{ objectFit: 'cover', borderRadius: 10, fontSize: 0 }} />
+                    ) : (
+                      <div className="emoji">{item.emoji || '🍽️'}</div>
+                    )}
                     <div className="info">
                       <strong>{item.name}</strong>
                       
@@ -226,6 +239,7 @@ export default function GuestMenu({ token }) {
               })}
             </div>
 
+            {room ? (
             <div className="card card-pad" style={{ marginTop: 14 }}>
               <h3>Room {room.number} · {room.type}</h3>
               <p className="small muted" style={{ marginTop: 10, lineHeight: 1.65 }}>{room.description}</p>
@@ -233,6 +247,7 @@ export default function GuestMenu({ token }) {
                 {(room.amenities || []).map((item) => <span className="chip" key={item}><Icon name="check" size={11} /> {item}</span>)}
               </div>
             </div>
+            ) : null}
           </>
         ) : null}
       </div>

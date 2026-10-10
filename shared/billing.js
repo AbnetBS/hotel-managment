@@ -176,30 +176,16 @@ export const needsCleaning = (status) => CLEANING_STATUSES.includes(status);
 export const statusLabel = (status) => ROOM_STATUS[status]?.label || String(status || '').replace(/_/g, ' ');
 
 export const ROLES = {
-  admin: { key: 'admin', label: 'Owner / Admin', home: 'overview', },
-  manager: { key: 'manager', label: 'Manager', home: 'overview', },
-  cashier: { key: 'cashier', label: 'Cashier / Front desk', home: 'rooms', },
-  waiter: { key: 'waiter', label: 'Waiter', home: 'deliveries', },
-  kitchen: { key: 'kitchen', label: 'Kitchen', home: 'station', },
-  pastry: { key: 'pastry', label: 'Pastry & cake', home: 'station', },
-  barista: { key: 'barista', label: 'Barista', home: 'station', },
-  juice: { key: 'juice', label: 'Juice station', home: 'station', },
-  housekeeping: { key: 'housekeeping', label: 'Housekeeping', home: 'housekeeping', },
-  maintenance: { key: 'maintenance', label: 'Maintenance', home: 'maintenance', },
+  admin: { key: 'admin', label: 'Owner / Admin', home: 'overview' },
+  cashier: { key: 'cashier', label: 'Cashier / Front desk', home: 'rooms' },
 };
 
 /** Which staff roles are allowed where. */
 export const ROLE_NAV = {
-  admin: ['overview', 'rooms', 'requests', 'currency', 'branches', 'roomtypes', 'menu', 'qrcodes', 'orders', 'reservations', 'stays', 'folios', 'reports', 'staff', 'formbuilder', 'housekeeping', 'maintenance', 'lostfound', 'inventory', 'settings', 'audit'],
-  manager: ['overview', 'rooms', 'requests', 'orders', 'reservations', 'stays', 'folios', 'reports', 'housekeeping', 'maintenance', 'lostfound', 'inventory', 'currency', 'audit'],
+  admin: ['overview', 'rooms', 'requests', 'orders', 'reservations', 'stays', 'folios', 'reports', 'tables',
+    'roomtypes', 'menu', 'qrcodes', 'inventory', 'lostfound', 'currency', 'branches', 'staff', 'formbuilder',
+    'housekeeping', 'maintenance', 'receipt', 'settings', 'audit'],
   cashier: ['rooms', 'requests', 'orders', 'stays', 'folios', 'reservations', 'lostfound'],
-  waiter: ['requests', 'deliveries'],
-  kitchen: ['station'],
-  pastry: ['station'],
-  barista: ['station'],
-  juice: ['station'],
-  housekeeping: ['requests', 'housekeeping', 'lostfound'],
-  maintenance: ['requests', 'maintenance'],
 };
 
 export function canSee(role, viewId) {

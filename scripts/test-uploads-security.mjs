@@ -23,7 +23,7 @@ const check = (label, ok, extra = '') => { console.log(`${ok ? '✅' : '❌'} ${
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
 
 const cashier = await login('cashier');
-const manager = await login('manager');
+const manager = await login('admin');
 
 // Find a guest to attach a scan to.
 const stays = await api(cashier, '/stays');

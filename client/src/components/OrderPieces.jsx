@@ -5,6 +5,7 @@ import { Icon } from '../lib/icons.jsx';
 import { Modal, Field, Empty, Pill } from '../lib/ui.jsx';
 import { useApp } from '../lib/store.jsx';
 import { STATIONS } from '../../../shared/billing.js';
+import { ReceiptModal } from './Receipt.jsx';
 
 /** Big, plain-language ticket used on the cashier desk, waiter board and stations. */
 export function OrderTicket({ order, children, onOpen }) {
@@ -263,6 +264,7 @@ export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', onClo
 export function OrderDetailModal({ orderId, onClose }) {
   const { toast } = useApp();
   const [data, setData] = useState(null);
+  const [print, setPrint] = useState(false);
 
   useEffect(() => {
     api.get(`/orders/${orderId}`).then(setData).catch((error) => toast(error.message, 'error'));
@@ -274,9 +276,18 @@ export function OrderDetailModal({ orderId, onClose }) {
   return (
     <Modal
       title={`Order #${order.code}`}
-      subtitle={`${order.room_id ? `Room ${order.room_number}` : 'Counter'} · ${order.guest_name}`}
+      subtitle={`${order.table_name || (order.room_id ? `Room ${order.room_number}` : 'Counter')} · ${order.guest_name}`}
       onClose={onClose}
       size="wide"
+      footer={
+        <>
+          <button className="btn" onClick={() => setPrint(true)}>
+            <Icon name="print" size={15} /> Print receipt
+          </button>
+          <button className="btn btn-primary" onClick={onClose}>Close</button>
+          {print ? <ReceiptModal order={order} title={`Receipt · #${order.code}`} onClose={() => setPrint(false)} /> : null}
+        </>
+      }
     >
       <div className="grid grid-2" style={{ gap: 18 }}>
         <div>
