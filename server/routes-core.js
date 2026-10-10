@@ -3,11 +3,11 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
-import { db, allSettings, nowIso, id, audit, ID_DIR } from './db.js';
+import { db, allSettings, setSetting, nowIso, id, audit, ID_DIR } from './db.js';
 import { login, logout, requireAuth, requireRole, userForToken } from './auth.js';
 import * as repo from './repo.js';
 import * as actions from './actions.js';
-import { operationsSnapshot, revenueSummary, dailyClose, trends, guestHistory } from './reports.js';
+import { operationsSnapshot, revenueSummary, dailyClose, trends, guestHistory, periods } from './reports.js';
 import { ROLES, STATIONS, computeRoomCharge, folioTotals } from '../shared/billing.js';
 import { recordLoginFailure, clearLoginFailures } from './security.js';
 import { rateCard, refreshRates, dualAmount } from './fx.js';
@@ -210,7 +210,16 @@ core.get('/orders/:id', requireAuth, (req, res) => {
 });
 
 core.post('/orders', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  const result = actions.createOrder({ ...req.body, clientRef: req.body?.client_ref, actor: req.user });
+  const result = actions.createOrder({
+    ...req.body,
+    roomId: req.body?.roomId ?? req.body?.room_id,
+    stayId: req.body?.stayId ?? req.body?.stay_id,
+    tableId: req.body?.tableId ?? req.body?.table_id,
+    guestName: req.body?.guestName ?? req.body?.guest_name,
+    chargeNow: Boolean(req.body?.charge_now ?? req.body?.chargeNow),
+    clientRef: req.body?.client_ref,
+    actor: req.user,
+  });
   if (result.error) return res.status(400).json(result);
   res.json(result);
 });
@@ -229,6 +238,10 @@ core.post('/orders/:id/send', requireAuth, requireRole('cashier', 'manager', 'ad
 
 core.post('/orders/:id/send-waiter', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
   fail(res, actions.sendWaiter({ orderId: req.params.id, actor: req.user }));
+});
+
+core.post('/orders/:id/ready', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
+  fail(res, actions.readyOrder({ orderId: req.params.id, actor: req.user }));
 });
 
 core.post('/orders/:id/deliver', requireAuth, requireRole('waiter', 'cashier', 'manager', 'admin'), (req, res) => {
@@ -480,18 +493,76 @@ core.get('/reports/daily', requireAuth, requireRole('manager', 'admin'), (req, r
   res.json(dailyClose({ date: req.query.date }));
 });
 
+/** Day by day (last 3), then week, then month — the owner's report buckets. */
+core.get('/reports/periods', requireAuth, requireRole('manager', 'admin'), (req, res) => {
+  res.json(periods());
+});
+
 core.get('/reports/guests', requireAuth, requireRole('manager', 'admin', 'cashier'), (req, res) => {
   res.json({ guests: guestHistory({ search: req.query.search }) });
+});
+
+/* -------------------------------- tables --------------------------------- */
+
+core.get('/tables', requireAuth, (req, res) => res.json({ tables: repo.tables() }));
+
+/* --------------------------- printed receipts ----------------------------- */
+/** Every printed slip leaves a soft copy behind — the admin page and the
+ *  reports read these; the cashier's printer is not the only record. */
+core.post('/receipts', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
+  const b = req.body || {};
+  const result = actions.saveReceipt({
+    invoiceNo: b.invoiceNo ?? b.invoice_no,
+    kind: b.kind,
+    stayId: b.stayId ?? b.stay_id,
+    orderId: b.orderId ?? b.order_id,
+    roomLabel: b.roomLabel ?? b.room_label,
+    guestName: b.guestName ?? b.guest_name,
+    currency: b.currency,
+    fxRate: b.fxRate ?? b.fx_rate,
+    roomTotalForeign: b.roomTotalForeign ?? b.room_total_foreign,
+    roomTotalEtb: b.roomTotalEtb ?? b.room_total_etb,
+    extrasTotalEtb: b.extrasTotalEtb ?? b.extras_total_etb,
+    totalEtb: b.totalEtb ?? b.total_etb,
+    rows: b.rows,
+    meta: b.meta,
+    fs: b.fs,
+    actor: req.user,
+  });
+  res.json(result);
+});
+
+core.get('/receipts', requireAuth, (req, res) => {
+  res.json({ receipts: repo.receipts({ search: req.query.search, limit: Number(req.query.limit) || 100 }) });
+});
+
+/** The next FS number for a printed receipt — the counter moves on every print. */
+core.post('/receipt/next-fs', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
+  const current = String(allSettings().receipt_fs || '00000000');
+  const asNumber = Number.parseInt(current, 10);
+  const next = Number.isFinite(asNumber) ? asNumber + 1 : 1;
+  const width = current.length >= 6 ? current.length : 8;
+  const upcoming = String(next).padStart(width, '0');
+  setSetting('receipt_fs', upcoming);
+  res.json({ fs: current });
 });
 
 /* ------------------------------ QR codes --------------------------------- */
 
 core.get('/qr/:roomId.png', requireAuth, guarded(async (req, res) => {
+  let token = null;
+  let target = req.query.target === 'register' ? 'r' : 'q';
   const room = db.prepare('SELECT * FROM rooms WHERE id = ? OR number = ?').get(req.params.roomId, req.params.roomId);
-  if (!room) return res.status(404).json({ error: 'Room not found.' });
-  const target = req.query.target === 'register' ? 'r' : 'q';
+  if (room) {
+    token = room.qr_token;
+  } else {
+    const table = db.prepare('SELECT * FROM tables WHERE id = ? OR name = ?').get(req.params.roomId, req.params.roomId);
+    if (!table) return res.status(404).json({ error: 'Room or table not found.' });
+    token = table.qr_token;
+    target = 'q'; // tables always open the menu
+  }
   const base = String(req.query.base || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-  const url = `${base}/${target}/${room.qr_token}`;
+  const url = `${base}/${target}/${token}`;
   const png = await QRCode.toBuffer(url, { width: 512, margin: 1, color: { dark: '#163536', light: '#ffffff' } });
   res.type('png').send(png);
 }));
@@ -530,7 +601,7 @@ function guestRoomPayload(room) {
     bill: stay ? buildGuestBill(stay, items) : null,
     // What the guest may ask for from the room (not only food).
     requestKinds: Object.values(REQUEST_KINDS).map((kind) => ({
-      key: kind.key, label: kind.label, am: kind.am, icon: kind.icon,
+      key: kind.key, label: kind.label, icon: kind.icon,
       priced: Boolean(kind.priced), service: kind.priced || false,
     })),
     canOrder: !!stay,
@@ -563,16 +634,16 @@ function buildGuestBill(stay, items) {
   return {
     stay: { code: stay.code, room: null, mode: stay.billing_mode, rate: stay.rate, check_in_at: stay.check_in_at },
     room: {
-      title: 'Room', title_am: 'ክፍል',
+      title: 'Room', title_am: '',
       units: charge.billedUnits, unit_label: charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural,
       live: !stay.check_out_at && stay.status === 'active',
       total: totals.room,
-      line: `${charge.billedUnits} ${charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural} × ${charge.rate}`,
+      line:`${charge.billedUnits} ${charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural} × ${charge.rate}`,
     },
     groups: [
-      group('food', 'Food & drinks', 'ምግብ እና መጠጥ'),
-      group('service', 'Hotel services', 'የሆቴል አገልግሎቶች'),
-      group('other', 'Other charges', 'ሌሎች ክፍያዎች'),
+      group('food', 'Food & drinks', ''),
+      group('service', 'Hotel services', ''),
+      group('other', 'Other charges', ''),
     ].filter(Boolean),
     payments: payments.map((i) => ({ id: i.id, description: i.description, amount: Math.abs(i.amount), at: i.created_at })),
     currency: allSettings().currency,
@@ -586,13 +657,13 @@ function buildGuestBill(stay, items) {
     paid: totals.paid,
     balance: totals.balance,
     // The same numbers in the guest's own currency, at the rate agreed at check-in.
-    display_currency: stay.currency || "ETB",
+    display_currency: stay.currency ||"ETB",
     display_rate: stay.currency && stay.currency !== "ETB" ? stay.fx_rate : null,
     display: (() => {
       if (!stay.currency || stay.currency === "ETB") return null;
       const convert = (value) => {
         const meta = { USD: [2, "$"], EUR: [2, "€"], GBP: [2, "£"], AED: [2, "AED"], SAR: [2, "SAR"], CNY: [2, "¥"], KES: [2, "KSh"], DJF: [0, "Fdj"], CAD: [2, "C$"], CHF: [2, "CHF"], JPY: [0, "¥"] }[stay.currency] || [2, ""];
-        return `${meta[1]} ${(Number(value) / (stay.fx_rate || 1)).toFixed(meta[0])}`;
+        return`${meta[1]} ${(Number(value) / (stay.fx_rate || 1)).toFixed(meta[0])}`;
       };
       return {
         currency: stay.currency,
@@ -657,7 +728,15 @@ core.post('/stays/:id/service', requireAuth, requireRole('cashier', 'waiter', 'm
 
 core.get('/public/hotel', (req, res) => {
   const settings = allSettings();
-  res.json({ hotel: { name: settings.hotel_name, line: settings.property_line, phone: settings.phone, currency: settings.currency } });
+  res.json({
+    hotel: {
+      name: settings.hotel_name, line: settings.property_line, phone: settings.phone, currency: settings.currency,
+      address: settings.address,
+      hero_title: settings.hero_title || '',
+      hero_tagline: settings.hero_tagline || '',
+      hero_image: settings.hero_image || '/hotel-lobby.jpg',
+    },
+  });
 });
 
 core.get('/public/room/:token', (req, res) => {
@@ -667,9 +746,23 @@ core.get('/public/room/:token', (req, res) => {
 });
 
 core.get('/public/menu/:token', (req, res) => {
-  const room = roomByToken(req.params.token);
-  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room any more.' });
   const menu = repo.menu();
+  const table = repo.tableByToken(req.params.token);
+  if (table) {
+    const settings = allSettings();
+    return res.json({
+      hotel: {
+        name: settings.hotel_name, line: settings.property_line, phone: settings.phone,
+        currency: settings.currency,
+      },
+      table: { id: table.id, name: table.name },
+      room: null, stay: null, bill: null,
+      categories: menu.categories.filter((c) => c.active),
+      items: menu.items.filter((i) => i.available),
+    });
+  }
+  const room = roomByToken(req.params.token);
+  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room or table any more.' });
   res.json({
     ...guestRoomPayload(room),
     categories: menu.categories.filter((c) => c.active),
@@ -678,13 +771,27 @@ core.get('/public/menu/:token', (req, res) => {
 });
 
 core.post('/public/order/:token', (req, res) => {
+  const lines = (req.body?.items || []).map((i) => ({ menu_item_id: i.menu_item_id, qty: i.qty, note: i.note }));
+  const table = repo.tableByToken(req.params.token);
+  if (table) {
+    const result = actions.createOrder({
+      tableId: table.id, channel: 'table', note: req.body?.note, clientRef: req.body?.client_ref,
+      guestName: table.name, items: lines,
+    });
+    if (result.error) return res.status(400).json(result);
+    return res.json({
+      order: { code: result.order.code, total: result.order.total, items: result.order.items.length },
+      duplicate: result.duplicate || undefined,
+      message: 'Your order was sent to the desk.',
+    });
+  }
   const room = roomByToken(req.params.token);
-  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room any more.' });
+  if (!room) return res.status(404).json({ error: 'This QR code is not linked to a room or table any more.' });
   const stay = actions.activeStayForRoom(room.id);
   if (!stay) return res.status(400).json({ error: 'This room is not checked in yet. Please order at the reception desk.' });
   const result = actions.createOrder({
     stayId: stay.id, roomId: room.id, channel: 'qr', note: req.body?.note, clientRef: req.body?.client_ref,
-    items: (req.body?.items || []).map((i) => ({ menu_item_id: i.menu_item_id, qty: i.qty, note: i.note })),
+    items: lines,
   });
   if (result.error) return res.status(400).json(result);
   res.json({

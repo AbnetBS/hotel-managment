@@ -57,10 +57,6 @@ export default function Station() {
         <div>
           <div className="eyebrow">{STATIONS[station].label} · live tickets</div>
           <h1>{STATIONS[station].label}</h1>
-          <p className="page-desc">
-            Only your items appear here. Tap <strong>Accept</strong> when you start, <strong>Done</strong> when the plate or cup leaves your hands.
-            The cashier sees “send waiter” as soon as every item on an order is done.
-          </p>
         </div>
         <div className="row">
           {user.role === 'admin' || user.role === 'manager' ? (
@@ -150,13 +146,6 @@ export default function Station() {
       )}
 
       <div style={{ height: 18 }} />
-      <div className="banner info">
-        <Icon name="wifi" size={15} />
-        <span>
-          Keep this screen open on the tablet in your station — tickets and alerts arrive by themselves, no refresh needed.
-          {user.role === 'admin' || user.role === 'manager' ? ' ' : ''}
-        </span>
-      </div>
     </>
   );
 }

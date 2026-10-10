@@ -3,13 +3,337 @@ import { api } from '../lib/api.js';
 import { getToken } from '../lib/api.js';
 import { useApp } from '../lib/store.jsx';
 import { Icon } from '../lib/icons.jsx';
-import { dateTimeOf, dayLong } from '../lib/format.js';
+import { dateTimeOf, dayLong, money } from '../lib/format.js';
 import { Card, Field, Empty, Stat } from '../lib/ui.jsx';
+import { ReceiptModal } from '../components/Receipt.jsx';
 
 export default function AdminSystem({ mode }) {
   if (mode === 'qrcodes') return <QrCodes />;
+  if (mode === 'tables') return <TablesPanel />;
+  if (mode === 'receipt') return <ReceiptPanel />;
+  if (mode === 'receipts') return <PrintedReceipts />;
   if (mode === 'audit') return <AuditLog />;
   return <SettingsPanel />;
+}
+
+/* --------------------------- printed receipts ---------------------------- */
+/** The soft copy of every slip the desk printed — the owner's paper trail. */
+
+function PrintedReceipts() {
+  const { toast } = useApp();
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(null);
+
+  const load = () => api.get(`/receipts?limit=300${search ? `&search=${encodeURIComponent(search)}` : ''}`)
+    .then((data) => setRows(data.receipts || []))
+    .catch((error) => toast(error.message, 'error'));
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const today = rows.filter((r) => String(r.printed_at).slice(0, 10) === new Date().toISOString().slice(0, 10));
+  const todayTotal = today.reduce((sum, r) => sum + (Number(r.total_etb) || 0), 0);
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Paper trail</div>
+          <h1>Printed receipts</h1>
+        </div>
+        <div className="row">
+          <div className="search">
+            <Icon name="search" size={14} />
+            <input
+              value={search}
+              placeholder="Room, guest or invoice…"
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && load()}
+            />
+          </div>
+          <button className="btn" onClick={load}><Icon name="rotate-ccw" size={14} /> Refresh</button>
+        </div>
+      </div>
+
+      <div className="grid grid-3" style={{ marginBottom: 18 }}>
+        <Stat label="Printed today" value={today.length} icon="print" foot="Slips handed to guests" />
+        <Stat label="Total today" value={money(todayTotal)} icon="banknote" foot="Room + food + services" />
+        <Stat label="On file" value={rows.length} icon="list" foot="Most recent 300" />
+      </div>
+
+      <Card noBody>
+        {rows.length === 0 ? (
+          <Empty title="No receipts printed yet" hint="Every print the cashier makes lands here." icon="print" />
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Printed</th>
+                <th>Invoice</th>
+                <th>Room / table</th>
+                <th>Guest</th>
+                <th>Room (guest money)</th>
+                <th>Food &amp; services</th>
+                <th>Total (birr)</th>
+                <th>Printed by</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td className="small muted">{dateTimeOf(row.printed_at)}</td>
+                  <td className="small">{row.invoice_no || '—'}<div className="tiny muted">FS {row.fs || '—'}</div></td>
+                  <td><strong className="small">{row.room_label}</strong><div className="tiny muted">{row.kind === 'order' ? 'Order' : 'Stay bill'}</div></td>
+                  <td className="small">{row.guest_name || '—'}</td>
+                  <td className="small">{row.currency !== 'ETB' ? `${Number(row.room_total_foreign).toFixed(2)} ${row.currency}` : money(row.room_total_etb)}</td>
+                  <td className="small">{money(row.extras_total_etb)}</td>
+                  <td className="small"><strong>{money(row.total_etb)}</strong></td>
+                  <td className="small muted">{row.printed_by || '—'}</td>
+                  <td>
+                    <button className="btn btn-sm" onClick={() => setOpen(row)}>
+                      <Icon name="eye" size={13} /> Open
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {open ? (
+        <ReceiptModal
+          data={{ ...(open.rows || {}), fs: open.fs }}
+          archive={false}
+          invoiceNo={open.invoice_no}
+          title={`Receipt · ${open.invoice_no || open.room_label}`}
+          onClose={() => setOpen(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/* -------------------------------- tables --------------------------------- */
+/** Tables get unique QR codes just like rooms — guests scan and order from the table. */
+
+function TablesPanel() {
+  const { toast } = useApp();
+  const [tables, setTables] = useState([]);
+  const [name, setName] = useState('');
+  const [seats, setSeats] = useState(4);
+  const [busy, setBusy] = useState(false);
+  const [base, setBase] = useState(window.location.origin);
+
+  const load = () => api.get('/tables').then((data) => setTables(data.tables || [])).catch(() => setTables([]));
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    if (!name.trim()) return toast('Give the table a name.', 'error');
+    setBusy(true);
+    try {
+      await api.post('/admin/tables', { name: name.trim(), seats: Number(seats) || 0 });
+      setName('');
+      toast('Table added.');
+      await load();
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const patch = async (id, body) => {
+    try {
+      await api.patch(`/admin/tables/${id}`, body);
+      await load();
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  };
+
+  const regen = async (id) => {
+    try {
+      await api.post(`/admin/tables/${id}/qr`);
+      toast('New QR code made.');
+      await load();
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  };
+
+  const remove = async (id, label) => {
+    if (!window.confirm(`Remove ${label}?`)) return;
+    try {
+      await api.del(`/admin/tables/${id}`);
+      toast('Table removed.');
+      await load();
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  };
+
+  return (
+    <>
+      <div className="page-head no-print">
+        <div>
+          <div className="eyebrow">Tables</div>
+          <h1>Tables &amp; their QR codes</h1>
+        </div>
+        <button className="btn" onClick={() => window.print()}>
+          <Icon name="print" size={14} /> Print QR sheet
+        </button>
+      </div>
+
+      <Card title="Add a table" className="no-print">
+        <div className="row" style={{ gap: 12, alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 220px' }}>
+            <Field label="Name"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Table 7" /></Field>
+          </div>
+          <div style={{ width: 120 }}>
+            <Field label="Seats"><input type="number" value={seats} onChange={(event) => setSeats(event.target.value)} /></Field>
+          </div>
+          <button className="btn btn-primary" disabled={busy} onClick={add}><Icon name="plus" size={15} /> Add table</button>
+        </div>
+      </Card>
+
+      <div style={{ height: 18 }} className="no-print" />
+
+      <Card title="All tables" noBody className="no-print">
+        {tables.length === 0 ? (
+          <Empty title="No tables yet" icon="qr" />
+        ) : (
+          <table>
+            <thead>
+              <tr><th>Table</th><th>Seats</th><th>QR link</th><th></th></tr>
+            </thead>
+            <tbody>
+              {tables.map((table) => (
+                <tr key={table.id}>
+                  <td>
+                    <input
+                      style={{ maxWidth: 160 }}
+                      defaultValue={table.name}
+                      onBlur={(event) => event.target.value !== table.name && patch(table.id, { name: event.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      style={{ maxWidth: 80 }}
+                      defaultValue={table.seats}
+                      onBlur={(event) => Number(event.target.value) !== table.seats && patch(table.id, { seats: Number(event.target.value) })}
+                    />
+                  </td>
+                  <td className="tiny muted" style={{ wordBreak: 'break-all', maxWidth: 260 }}>/q/{table.qr_token}</td>
+                  <td>
+                    <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                      <a className="btn btn-sm" href={`/api/qr/${table.id}.png?token=${encodeURIComponent(getToken() || '')}`} target="_blank" rel="noreferrer">
+                        <Icon name="qr" size={13} /> QR
+                      </a>
+                      <button className="btn btn-sm" onClick={() => regen(table.id)}><Icon name="rotate-ccw" size={13} /> New code</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => remove(table.id, table.name)}><Icon name="trash" size={13} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <div className="qr-sheet">
+        {tables.map((table) => (
+          <div className="qr-card" key={table.id}>
+            <div className="num">{table.name}</div>
+            <div className="tiny muted" style={{ marginBottom: 10 }}>{table.seats ? `${table.seats} seats` : ''}</div>
+            <img src={`/api/qr/${table.id}.png?token=${encodeURIComponent(getToken() || '')}`} alt={`Menu QR for ${table.name}`} />
+            <div className="cap">Scan to see the menu &amp; order</div>
+            <div className="tiny muted" style={{ marginTop: 10, wordBreak: 'break-all' }}>
+              {base.replace(/\/$/, '')}/q/{table.qr_token}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* --------------------------- receipt template ---------------------------- */
+/** The head and foot of every printed receipt — TIN, name, address, FS number. */
+
+function ReceiptPanel() {
+  const { settings, toast, loadAll } = useApp();
+  const [form, setForm] = useState(settings);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => setForm(settings), [settings]);
+  const set = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Printing</div>
+          <h1>Receipt template</h1>
+        </div>
+        <button
+          className="btn btn-primary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await api.patch('/admin/settings', form);
+              toast('Receipt template saved.');
+              await loadAll();
+            } catch (error) {
+              toast(error.message, 'error');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <Icon name="check" size={15} /> Save template
+        </button>
+      </div>
+
+      <div className="grid grid-main">
+        <Card title="Receipt head">
+          <div className="form-grid">
+            <Field label="TIN">
+              <input value={form.receipt_tin || ''} onChange={(event) => set('receipt_tin')(event.target.value)} placeholder="0052/2119" />
+            </Field>
+            <Field label="FS No (next)">
+              <input value={form.receipt_fs || ''} onChange={(event) => set('receipt_fs')(event.target.value)} placeholder="00162882" />
+            </Field>
+            <Field label="Business name on the receipt" full>
+              <input value={form.receipt_name || ''} onChange={(event) => set('receipt_name')(event.target.value)} placeholder="MY HOTEL PLC" />
+            </Field>
+            <Field label="Address lines" full>
+              <textarea value={form.receipt_address || ''} onChange={(event) => set('receipt_address')(event.target.value)} placeholder="Bole Road, Addis Ababa" />
+            </Field>
+            <Field label="Telephone">
+              <input value={form.receipt_phone || ''} onChange={(event) => set('receipt_phone')(event.target.value)} placeholder="TEL-011 000 0000" />
+            </Field>
+            <Field label="Invoice title">
+              <input value={form.receipt_title || ''} onChange={(event) => set('receipt_title')(event.target.value)} placeholder="CASH INVOICE" />
+            </Field>
+          </div>
+        </Card>
+
+        <Card title="Receipt foot">
+          <div className="form-grid">
+            <Field label="Footer line 1" full>
+              <input value={form.receipt_footer || ''} onChange={(event) => set('receipt_footer')(event.target.value)} />
+            </Field>
+            <Field label="Footer line 2" full>
+              <input value={form.receipt_footer2 || ''} onChange={(event) => set('receipt_footer2')(event.target.value)} />
+            </Field>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
 }
 
 /* -------------------------------- QR codes ------------------------------- */
@@ -28,10 +352,6 @@ function QrCodes() {
         <div>
           <div className="eyebrow">Print &amp; stick</div>
           <h1>Room QR codes</h1>
-          <p className="page-desc">
-            Two codes per room. The <strong>menu code</strong> goes in the room — the guest scans it and orders food to the room. The{' '}
-            <strong>registration code</strong> goes at reception or on the door: the guest fills their details, and the desk approves them.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => window.print()}>
@@ -40,7 +360,7 @@ function QrCodes() {
         </div>
       </div>
 
-      <Card title="Which code is on the sheet?" subtitle="Print one kind at a time, or both" className="no-print">
+      <Card title="Which code is on the sheet?" className="no-print">
         <div className="row" style={{ gap: 12 }}>
           <div className="seg">
             <button className={kind === 'q' ? 'on' : ''} onClick={() => setKind('q')}>Order food (in the room)</button>
@@ -83,13 +403,6 @@ function QrCodes() {
         ))}
       </div>
 
-      <div className="banner warn no-print" style={{ marginTop: 18 }}>
-        <Icon name="alert" size={15} />
-        <span>
-          If a guest shares the code or a room changes use, regenerate the code from <strong>Rooms &amp; photos → Room list</strong> and print the
-          sheet again.
-        </span>
-      </div>
     </>
   );
 }
@@ -110,7 +423,6 @@ function SettingsPanel() {
         <div>
           <div className="eyebrow">Hotel setup</div>
           <h1>Hotel settings</h1>
-          <p className="page-desc">Receipts, taxes, checkout time and the small rules that keep the desk consistent.</p>
         </div>
         <button
           className="btn btn-primary"
@@ -133,7 +445,7 @@ function SettingsPanel() {
       </div>
 
       <div className="grid grid-main">
-        <Card title="The hotel" subtitle="Shown on receipts and on the guest pages">
+        <Card title="The hotel">
           <div className="form-grid">
             <Field label="Hotel name">
               <input value={form.hotel_name || ''} onChange={(event) => set('hotel_name')(event.target.value)} />
@@ -150,20 +462,31 @@ function SettingsPanel() {
             <Field label="Address" full>
               <textarea value={form.address || ''} onChange={(event) => set('address')(event.target.value)} />
             </Field>
-            <Field label="Receipt footer" full>
+            <Field label="Receipt TIN">
+              <input value={form.receipt_tin || ''} onChange={(event) => set('receipt_tin')(event.target.value)} />
+            </Field>
+            <Field label="Receipt footer">
               <input value={form.receipt_footer || ''} onChange={(event) => set('receipt_footer')(event.target.value)} />
             </Field>
           </div>
         </Card>
 
-        <Card title="Money &amp; timing" subtitle="How the bills and the day work">
+        <Card title="Website">
           <div className="form-grid">
-            <Field label="VAT %">
-              <input type="number" value={form.vat_percent ?? ''} onChange={(event) => set('vat_percent')(event.target.value)} />
+            <Field label="Hero title" full>
+              <input value={form.hero_title || ''} onChange={(event) => set('hero_title')(event.target.value)} />
             </Field>
-            <Field label="Service charge %">
-              <input type="number" value={form.service_charge_percent ?? ''} onChange={(event) => set('service_charge_percent')(event.target.value)} />
+            <Field label="Hero tagline" full>
+              <input value={form.hero_tagline || ''} onChange={(event) => set('hero_tagline')(event.target.value)} />
             </Field>
+            <Field label="Hero image" full>
+              <input value={form.hero_image || ''} onChange={(event) => set('hero_image')(event.target.value)} placeholder="/hotel-lobby.jpg" />
+            </Field>
+          </div>
+        </Card>
+
+        <Card title="Money &amp; timing">
+          <div className="form-grid">
             <Field label="Checkout time (hour)">
               <input type="number" value={form.checkout_hour ?? 12} onChange={(event) => set('checkout_hour')(event.target.value)} />
             </Field>
@@ -232,7 +555,6 @@ function AuditLog() {
         <div>
           <div className="eyebrow">Nothing disappears</div>
           <h1>Audit log</h1>
-          <p className="page-desc">Every check-in, payment, price change and staff change is written down with who did it and when.</p>
         </div>
       </div>
 

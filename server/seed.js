@@ -24,11 +24,11 @@ export function resetAll() {
     'guests', 'menu_items', 'menu_categories', 'rooms', 'room_types', 'registration_fields', 'housekeeping_tasks',
     'guest_requests', 'lost_found', 'inventory_items', 'recipe_items', 'stock_moves', 'purchase_requests',
     'approvals', 'services', 'branches',
-    'maintenance_issues', 'users', 'settings',
+    'maintenance_issues', 'users', 'settings', 'tables', 'receipts',
   ];
-  db.pragma('foreign_keys = OFF');
-  for (const t of tables) db.prepare(`DELETE FROM ${t}`).run();
-  db.pragma('foreign_keys = ON');
+  db.foreignKeys(false);
+  for (const t of tables) db.wipeTable(t);
+  db.foreignKeys(true);
 }
 
 export function seed() {
@@ -50,7 +50,17 @@ export function seed() {
     grace_hours: 1,
     wifi_name: 'CloveHouse_Guest',
     wifi_password: 'welcome2026',
-    receipt_footer: 'Thank you for staying with us — እንደገና ይመጡ!',
+    receipt_footer: 'Thank you for staying with us.',
+    receipt_footer2: '',
+    receipt_name: 'CLOVE HOUSE HOTEL',
+    receipt_address: 'Bole Road, Addis Ababa',
+    receipt_phone: 'TEL-+251 11 662 4400',
+    receipt_title: 'CASH INVOICE',
+    receipt_fs: '00162882',
+    receipt_tin: 'TIN 0072849155',
+    hero_title: 'Stay easy, rest well.',
+    hero_tagline: 'Rooms, dining and every guest request — handled in one place.',
+    hero_image: '/hotel-lobby.jpg',
     dayuse_default_hours: 3,
     alert_sound: 1,
     require_call_confirmation: 1,
@@ -66,16 +76,16 @@ export function seed() {
 
   /* ------------------------- services you can charge ------------------------ */
   const services = [
-    ['sv-laundry', 'Laundry · per kg', 'ልብስ ማጠቢያ', 'service', 120, 'housekeeping', 0],
-    ['sv-laundry-express', 'Express laundry (4 hours)', 'አስቸኳይ ልብስ', 'service', 220, 'housekeeping', 1],
-    ['sv-minibar', 'Minibar', 'ሚኒባር', 'service', 250, 'juice', 2],
-    ['sv-water', 'Bottled water (delivered)', 'ውሃ', 'service', 40, 'juice', 3],
-    ['sv-airport', 'Airport pickup', 'የአውሮፕላን ማረፊያ', 'service', 900, 'desk', 4],
-    ['sv-taxi', 'Taxi around town', 'ታክሲ', 'service', 500, 'desk', 5],
-    ['sv-spa', 'Massage · 60 min', 'ማሳጅ', 'service', 1200, 'desk', 6],
-    ['sv-cake', 'Cake delivered to the room', 'ኬክ', 'service', 1450, 'pastry', 7],
-    ['sv-simcard', 'Local SIM card', 'ሲም ካርድ', 'other', 150, 'desk', 8],
-    ['sv-iron', 'Iron & board brought up', 'ማጠንጠኛ', 'service', 0, 'housekeeping', 9],
+    ['sv-laundry', 'Laundry · per kg', '', 'service', 120, 'housekeeping', 0],
+    ['sv-laundry-express', 'Express laundry (4 hours)', '', 'service', 220, 'housekeeping', 1],
+    ['sv-minibar', 'Minibar', '', 'service', 250, 'juice', 2],
+    ['sv-water', 'Bottled water (delivered)', '', 'service', 40, 'juice', 3],
+    ['sv-airport', 'Airport pickup', '', 'service', 900, 'desk', 4],
+    ['sv-taxi', 'Taxi around town', '', 'service', 500, 'desk', 5],
+    ['sv-spa', 'Massage · 60 min', '', 'service', 1200, 'desk', 6],
+    ['sv-cake', 'Cake delivered to the room', '', 'service', 1450, 'pastry', 7],
+    ['sv-simcard', 'Local SIM card', '', 'other', 150, 'desk', 8],
+    ['sv-iron', 'Iron & board brought up', '', 'service', 0, 'housekeeping', 9],
   ];
   const insertService = db.prepare('INSERT INTO services (id, name, name_am, kind, price, station, active, sort) VALUES (?, ?, ?, ?, ?, ?, 1, ?)');
   for (const row of services) insertService.run(...row);
@@ -92,28 +102,28 @@ export function seed() {
 
   /* ------------------------------- inventory ------------------------------- */
   const stock = [
-    ['inv-chicken', 'Chicken breast', 'የዶሮ ስጋ', 'kg', 8, 5, 420, 'Bole poultry'],
-    ['inv-beef', 'Beef (tibs cut)', 'የበሬ ስጋ', 'kg', 12, 6, 780, 'Kera butchery'],
-    ['inv-injera', 'Injera', 'እንጀራ', 'pcs', 60, 30, 12, 'Local bakery'],
-    ['inv-berbere', 'Berbere', 'በርበሬ', 'kg', 4, 2, 380, 'Merkato spice shop'],
-    ['inv-shiroro', 'Shiro powder', 'ሽሮ', 'kg', 6, 3, 210, 'Merkato spice shop'],
-    ['inv-oil', 'Cooking oil', 'ዘይት', 'L', 12, 6, 190, 'Wholesaler'],
-    ['inv-eggs', 'Eggs', 'እንቁላል', 'pcs', 90, 60, 9, 'Farm delivery'],
-    ['inv-milk', 'Milk', 'ወተት', 'L', 18, 12, 65, 'Farm delivery'],
-    ['inv-coffee', 'Coffee beans (Yirgacheffe)', 'ቡና', 'kg', 5, 3, 620, 'Yirgacheffe supplier'],
-    ['inv-mango', 'Mango', 'ማንጎ', 'kg', 9, 5, 120, 'Fruit market'],
-    ['inv-avocado', 'Avocado', 'አቮካዶ', 'kg', 7, 4, 140, 'Fruit market'],
-    ['inv-water', 'Bottled water 500ml', 'ውሃ', 'pcs', 140, 60, 22, 'Beverage supplier'],
-    ['inv-soft', 'Soft drinks 330ml', 'ለስላሳ', 'pcs', 96, 48, 32, 'Beverage supplier'],
-    ['inv-beer', 'Beer 330ml', 'ቢራ', 'pcs', 72, 36, 55, 'Beverage supplier'],
-    ['inv-flour', 'Flour', 'ዱቄት', 'kg', 25, 15, 95, 'Wholesaler'],
-    ['inv-sugar', 'Sugar', 'ስኳር', 'kg', 20, 10, 130, 'Wholesaler'],
-    ['inv-butter', 'Butter', 'ቅቤ', 'kg', 6, 3, 700, 'Dairy supplier'],
-    ['inv-cocoa', 'Cocoa powder', 'ኮኮ', 'kg', 3, 2, 850, 'Pastry supplier'],
-    ['inv-cream', 'Cream', 'ክሬም', 'L', 5, 3, 380, 'Dairy supplier'],
-    ['inv-toilet', 'Toilet paper', 'የሽንት ቤት ወረቀት', 'rolls', 80, 40, 28, 'Housekeeping supplier'],
-    ['inv-soap', 'Guest soap', 'ሳሙና', 'pcs', 120, 60, 18, 'Housekeeping supplier'],
-    ['inv-towel', 'Bath towels', 'ፎጣ', 'pcs', 45, 60, 260, 'Linen supplier'],
+    ['inv-chicken', 'Chicken breast', '', 'kg', 8, 5, 420, 'Bole poultry'],
+    ['inv-beef', 'Beef (tibs cut)', '', 'kg', 12, 6, 780, 'Kera butchery'],
+    ['inv-injera', 'Injera', '', 'pcs', 60, 30, 12, 'Local bakery'],
+    ['inv-berbere', 'Berbere', '', 'kg', 4, 2, 380, 'Merkato spice shop'],
+    ['inv-shiroro', 'Shiro powder', '', 'kg', 6, 3, 210, 'Merkato spice shop'],
+    ['inv-oil', 'Cooking oil', '', 'L', 12, 6, 190, 'Wholesaler'],
+    ['inv-eggs', 'Eggs', '', 'pcs', 90, 60, 9, 'Farm delivery'],
+    ['inv-milk', 'Milk', '', 'L', 18, 12, 65, 'Farm delivery'],
+    ['inv-coffee', 'Coffee beans (Yirgacheffe)', '', 'kg', 5, 3, 620, 'Yirgacheffe supplier'],
+    ['inv-mango', 'Mango', '', 'kg', 9, 5, 120, 'Fruit market'],
+    ['inv-avocado', 'Avocado', '', 'kg', 7, 4, 140, 'Fruit market'],
+    ['inv-water', 'Bottled water 500ml', '', 'pcs', 140, 60, 22, 'Beverage supplier'],
+    ['inv-soft', 'Soft drinks 330ml', '', 'pcs', 96, 48, 32, 'Beverage supplier'],
+    ['inv-beer', 'Beer 330ml', '', 'pcs', 72, 36, 55, 'Beverage supplier'],
+    ['inv-flour', 'Flour', '', 'kg', 25, 15, 95, 'Wholesaler'],
+    ['inv-sugar', 'Sugar', '', 'kg', 20, 10, 130, 'Wholesaler'],
+    ['inv-butter', 'Butter', '', 'kg', 6, 3, 700, 'Dairy supplier'],
+    ['inv-cocoa', 'Cocoa powder', '', 'kg', 3, 2, 850, 'Pastry supplier'],
+    ['inv-cream', 'Cream', '', 'L', 5, 3, 380, 'Dairy supplier'],
+    ['inv-toilet', 'Toilet paper', '', 'rolls', 80, 40, 28, 'Housekeeping supplier'],
+    ['inv-soap', 'Guest soap', '', 'pcs', 120, 60, 18, 'Housekeeping supplier'],
+    ['inv-towel', 'Bath towels', '', 'pcs', 45, 60, 260, 'Linen supplier'],
   ];
   const insertStock = db.prepare(`INSERT INTO inventory_items (id, name, name_am, unit, stock, min_stock, cost, supplier, active, updated_at)
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`);
@@ -192,21 +202,20 @@ export function seed() {
   /* -------------------------------- users --------------------------------- */
   const staff = [
     ['u-admin', 'Marta Ayele', 'admin', 'admin', '+251 91 120 4455'],
-    ['u-manager', 'Dawit Bekele', 'manager', 'manager', '+251 91 233 8877'],
     ['u-cashier', 'Hana Girma', 'cashier', 'cashier', '+251 92 145 2200'],
     ['u-cashier2', 'Meron Tadesse', 'meron', 'cashier', '+251 93 887 1122'],
-    ['u-waiter', 'Yonas Tesfaye', 'waiter', 'waiter', '+251 91 774 3322'],
-    ['u-kitchen', 'Chef Dawit Molla', 'kitchen', 'kitchen', '+251 91 662 0011'],
-    ['u-barista', 'Bethlehem Alemu', 'barista', 'barista', '+251 92 553 7744'],
-    ['u-juice', 'Samri Fikru', 'juice', 'juice', '+251 93 226 8899'],
-    ['u-pastry', 'Selamawit Bekele', 'pastry', 'pastry', '+251 91 229 8811'],
-    ['u-housekeeping', 'Tigist Mulatu', 'housekeeping', 'housekeeping', '+251 91 445 6677'],
   ];
   const insertUser = db.prepare(`INSERT INTO users (id, name, username, pin_hash, pin_salt, role, phone, active, created_at)
                                  VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`);
   for (const [uid, name, username, role, phone] of staff) {
     const { hash, salt } = hashPin('1234');
     insertUser.run(uid, name, username, hash, salt, role, phone, nowIso());
+  }
+
+  /* -------------------------------- tables -------------------------------- */
+  const insertTable = db.prepare('INSERT INTO tables (id, name, seats, qr_token, active, sort, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)');
+  for (let i = 1; i <= 6; i += 1) {
+    insertTable.run(`tbl-${i}`, `Table ${i}`, 4, randomToken(12), i, nowIso());
   }
 
   /* ------------------------------ room types ------------------------------ */
@@ -286,17 +295,17 @@ export function seed() {
 
   /* ------------------------- registration form fields --------------------- */
   const fields = [
-    ['rf-name', 'full_name', 'Full name', 'ሙሉ ስም', 'text', 1, null, 'e.g. Abebe Kebede', null],
-    ['rf-phone', 'phone', 'Phone number', 'ስልክ ቁጥር', 'phone', 1, null, '09xx xxx xxx', '+251'],
-    ['rf-idtype', 'id_type', 'ID type', 'የመታወቂያ አይነት', 'select', 1, ['National ID (Kebele)', 'Passport', 'Driving licence', 'Residence permit', 'Company ID'], null, null],
-    ['rf-idno', 'id_number', 'ID / passport number', 'የመታወቂያ ቁጥር', 'text', 1, null, 'FAN / passport number', null],
-    ['rf-nation', 'nationality', 'Nationality', 'ዜግነት', 'text', 0, null, 'Ethiopian', 'Ethiopian'],
-    ['rf-email', 'email', 'E-mail', 'ኢሜይል', 'email', 0, null, 'name@example.com', null],
-    ['rf-address', 'address', 'Address', 'አድራሻ', 'text', 0, null, 'City, sub-city, woreda', null],
-    ['rf-company', 'company', 'Company / organisation', 'ድርጅት', 'text', 0, null, 'Optional', null],
-    ['rf-plate', 'plate_number', 'Vehicle plate number', 'የሰሌዳ ቁጥር', 'text', 0, null, 'e.g. AA 3 B 12345', null],
-    ['rf-adults', 'adults', 'Number of guests', 'የእንግዶች ቁጥር', 'number', 1, null, '1', '1'],
-    ['rf-emergency', 'emergency_contact', 'Emergency contact phone', 'የአደጋ ጊዜ ስልክ', 'phone', 0, null, 'Optional', null],
+    ['rf-name', 'full_name', 'Full name', '', 'text', 1, null, 'e.g. Abebe Kebede', null],
+    ['rf-phone', 'phone', 'Phone number', '', 'phone', 1, null, '09xx xxx xxx', '+251'],
+    ['rf-idtype', 'id_type', 'ID type', '', 'select', 1, ['National ID (Kebele)', 'Passport', 'Driving licence', 'Residence permit', 'Company ID'], null, null],
+    ['rf-idno', 'id_number', 'ID / passport number', '', 'text', 1, null, 'FAN / passport number', null],
+    ['rf-nation', 'nationality', 'Nationality', '', 'text', 0, null, 'Ethiopian', 'Ethiopian'],
+    ['rf-email', 'email', 'E-mail', '', 'email', 0, null, 'name@example.com', null],
+    ['rf-address', 'address', 'Address', '', 'text', 0, null, 'City, sub-city, woreda', null],
+    ['rf-company', 'company', 'Company / organisation', '', 'text', 0, null, 'Optional', null],
+    ['rf-plate', 'plate_number', 'Vehicle plate number', '', 'text', 0, null, 'e.g. AA 3 B 12345', null],
+    ['rf-adults', 'adults', 'Number of guests', '', 'number', 1, null, '1', '1'],
+    ['rf-emergency', 'emergency_contact', 'Emergency contact phone', '', 'phone', 0, null, 'Optional', null],
   ];
   const insertField = db.prepare(`INSERT INTO registration_fields (id, key, label, label_am, type, required, options, placeholder, sort, active)
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`);
@@ -306,54 +315,54 @@ export function seed() {
 
   /* -------------------------------- menu ---------------------------------- */
   const categories = [
-    ['mc-breakfast', 'Breakfast', 'ቁርስ', 'kitchen', 0],
-    ['mc-mains', 'Main dishes', 'ዋና ምግብ', 'kitchen', 1],
-    ['mc-snacks', 'Snacks & sides', 'መክሰስ', 'kitchen', 2],
-    ['mc-pastry', 'Cake & pastry', 'ኬክ እና ጣፋጭ', 'pastry', 3],
-    ['mc-coffee', 'Coffee & hot drinks', 'ቡና', 'barista', 4],
-    ['mc-cold', 'Juice & soft drinks', 'ጁስ', 'juice', 5],
-    ['mc-bar', 'Bar', 'ባር', 'barista', 6],
+    ['mc-breakfast', 'Breakfast', '', 'kitchen', 0],
+    ['mc-mains', 'Main dishes', '', 'kitchen', 1],
+    ['mc-snacks', 'Snacks & sides', '', 'kitchen', 2],
+    ['mc-pastry', 'Cake & pastry', '', 'pastry', 3],
+    ['mc-coffee', 'Coffee & hot drinks', '', 'barista', 4],
+    ['mc-cold', 'Juice & soft drinks', '', 'juice', 5],
+    ['mc-bar', 'Bar', '', 'barista', 6],
   ];
   const insertCat = db.prepare('INSERT INTO menu_categories (id, name, name_am, station, sort, active) VALUES (?, ?, ?, ?, ?, 1)');
   for (const c of categories) insertCat.run(...c);
 
   const items = [
-    ['mi-firfir', 'Firfir', 'ፍርፍር', 'Shredded injera in spicy berbere sauce with yoghurt', 260, 'mc-breakfast', 'kitchen', 12, '🍲'],
-    ['mi-chechebsa', 'Chechebsa', 'ጨጨብሳ', 'Shredded kita tossed in berbere and niter kibbeh', 240, 'mc-breakfast', 'kitchen', 12, '🥞'],
-    ['mi-eggs', 'Scrambled eggs', 'እንቁላል', 'Farm eggs with onion, tomato and bread', 220, 'mc-breakfast', 'kitchen', 10, '🍳'],
-    ['mi-omelette', 'Cheese omelette', 'ኦምሌት', 'Three-egg omelette with cheese and salad', 280, 'mc-breakfast', 'kitchen', 12, '🍳'],
-    ['mi-eggtibs', 'Egg with tibs', 'እንቁላል ከጥብስ', 'Fried eggs with beef tibs and bread', 380, 'mc-breakfast', 'kitchen', 15, '🍳'],
-    ['mi-dorowat', 'Doro wat', 'ዶሮ ወጥ', 'Slow-cooked chicken stew with injera and ayib', 620, 'mc-mains', 'kitchen', 25, '🍗'],
-    ['mi-beef-tibs', 'Beef tibs', 'የበሬ ጥብስ', 'Sautéed beef with rosemary, onion and injera', 580, 'mc-mains', 'kitchen', 20, '🥩'],
-    ['mi-shiro', 'Shiro be wet', 'ሽሮ', 'Ground chickpea stew simmered in spices', 320, 'mc-mains', 'kitchen', 18, '🍲'],
-    ['mi-beyaynetu', 'Beyaynetu', 'በያይነቱ', 'Fasting combination platter on injera', 380, 'mc-mains', 'kitchen', 18, '🥗'],
-    ['mi-kitfo', 'Kitfo', 'ክትፎ', 'Minced beef warmed in mitmita and niter kibbeh', 640, 'mc-mains', 'kitchen', 22, '🥩'],
-    ['mi-pasta', 'Chicken pasta', 'ፓስታ', 'Penne with grilled chicken in tomato cream', 460, 'mc-mains', 'kitchen', 20, '🍝'],
-    ['mi-burger', 'Beef burger & chips', 'በርገር', 'House beef patty, cheese, salad and fries', 480, 'mc-mains', 'kitchen', 22, '🍔'],
-    ['mi-club', 'Club sandwich', 'ክለብ ሳንድዊች', 'Triple-decker with chicken, egg and chips', 420, 'mc-mains', 'kitchen', 15, '🥪'],
-    ['mi-sambusa', 'Sambusa (4 pcs)', 'ሳምቡሳ', 'Crisp pastry with lentil or beef filling', 120, 'mc-snacks', 'kitchen', 12, '🥟'],
-    ['mi-chips', 'Chips firfir', 'ቺፕስ ፍርፍር', 'Fries tossed with berbere and tomato', 200, 'mc-snacks', 'kitchen', 12, '🍟'],
-    ['mi-fruit', 'Fruit platter', 'የፍራፍሬ ትሪ', 'Seasonal fruit, cut to order', 280, 'mc-snacks', 'kitchen', 10, '🍉'],
-    ['mi-cake-slice', 'Black Forest cake (slice)', 'ኬክ ቁራጭ', 'Chocolate sponge, cream and cherries', 220, 'mc-pastry', 'pastry', 8, '🍰'],
-    ['mi-cheesecake', 'Blueberry cheesecake', 'ቺዝ ኬክ', 'Baked cheesecake with blueberry topping', 260, 'mc-pastry', 'pastry', 8, '🍰'],
-    ['mi-birthday', 'Birthday cake (whole · 1 kg)', 'የልደት ኬክ', 'Order ahead: chocolate or vanilla, name written on top', 1450, 'mc-pastry', 'pastry', 45, '🎂'],
-    ['mi-croissant', 'Butter croissant', 'ክሮሰንት', 'Baked fresh every morning', 150, 'mc-pastry', 'pastry', 5, '🥐'],
-    ['mi-donut', 'Doughnut (2 pcs)', 'ዶናት', 'Sugar-glazed, still warm', 120, 'mc-pastry', 'pastry', 5, '🍩'],
-    ['mi-cookie', 'Cookies (4 pcs)', 'ኩኪስ', 'Butter cookies with cardamom', 100, 'mc-pastry', 'pastry', 5, '🍪'],
-    ['mi-coffee', 'Ethiopian coffee', 'የኢትዮጵያ ቡና', 'Single-origin, brewed the traditional way', 120, 'mc-coffee', 'barista', 8, '☕'],
-    ['mi-macchiato', 'Macchiato', 'ማኪያቶ', 'Double espresso with steamed milk', 140, 'mc-coffee', 'barista', 6, '☕'],
-    ['mi-espresso', 'Espresso', 'ኤስፕሬሶ', 'Rich single shot', 110, 'mc-coffee', 'barista', 5, '☕'],
-    ['mi-tea', 'Black tea', 'ሻይ', 'With lemon or milk', 90, 'mc-coffee', 'barista', 5, '🫖'],
-    ['mi-hotchoc', 'Hot chocolate', 'ሆት ቾኮሌት', 'Steamed milk and cocoa', 180, 'mc-coffee', 'barista', 7, '🍫'],
-    ['mi-mango', 'Fresh mango juice', 'የማንጎ ጁስ', 'Pressed to order, no added sugar', 200, 'mc-cold', 'juice', 7, '🥭'],
-    ['mi-avocado', 'Avocado juice', 'የአቮካዶ ጁስ', 'Creamy avocado with lime', 220, 'mc-cold', 'juice', 7, '🥑'],
-    ['mi-papaya', 'Papaya juice', 'የፓፓያ ጁስ', 'Fresh papaya, lightly chilled', 200, 'mc-cold', 'juice', 7, '🍹'],
-    ['mi-spris', 'Spris', 'ስፕሪስ', 'Layered avocado, mango and papaya', 240, 'mc-cold', 'juice', 9, '🍹'],
-    ['mi-water', 'Bottled water', 'ውሃ', '500 ml · still', 40, 'mc-cold', 'juice', 2, '💧'],
-    ['mi-ambo', 'Ambo mineral water', 'አምቦ', 'Sparkling · 500 ml', 60, 'mc-cold', 'juice', 2, '🫧'],
-    ['mi-coke', 'Soft drink', 'ለስላሳ', 'Coca-Cola, Sprite or Fanta', 80, 'mc-cold', 'juice', 2, '🥤'],
-    ['mi-beer', 'Local beer', 'ቢራ', 'St. George, Habesha or Dashen · 330 ml', 150, 'mc-bar', 'barista', 3, '🍺'],
-    ['mi-wine', 'House wine (glass)', 'ወይን', 'Red or white, served by the glass', 320, 'mc-bar', 'barista', 3, '🍷'],
+    ['mi-firfir', 'Firfir', '', 'Shredded injera in spicy berbere sauce with yoghurt', 260, 'mc-breakfast', 'kitchen', 12, '🍲'],
+    ['mi-chechebsa', 'Chechebsa', '', 'Shredded kita tossed in berbere and niter kibbeh', 240, 'mc-breakfast', 'kitchen', 12, '🥞'],
+    ['mi-eggs', 'Scrambled eggs', '', 'Farm eggs with onion, tomato and bread', 220, 'mc-breakfast', 'kitchen', 10, '🍳'],
+    ['mi-omelette', 'Cheese omelette', '', 'Three-egg omelette with cheese and salad', 280, 'mc-breakfast', 'kitchen', 12, '🍳'],
+    ['mi-eggtibs', 'Egg with tibs', '', 'Fried eggs with beef tibs and bread', 380, 'mc-breakfast', 'kitchen', 15, '🍳'],
+    ['mi-dorowat', 'Doro wat', '', 'Slow-cooked chicken stew with injera and ayib', 620, 'mc-mains', 'kitchen', 25, '🍗'],
+    ['mi-beef-tibs', 'Beef tibs', '', 'Sautéed beef with rosemary, onion and injera', 580, 'mc-mains', 'kitchen', 20, '🥩'],
+    ['mi-shiro', 'Shiro be wet', '', 'Ground chickpea stew simmered in spices', 320, 'mc-mains', 'kitchen', 18, '🍲'],
+    ['mi-beyaynetu', 'Beyaynetu', '', 'Fasting combination platter on injera', 380, 'mc-mains', 'kitchen', 18, '🥗'],
+    ['mi-kitfo', 'Kitfo', '', 'Minced beef warmed in mitmita and niter kibbeh', 640, 'mc-mains', 'kitchen', 22, '🥩'],
+    ['mi-pasta', 'Chicken pasta', '', 'Penne with grilled chicken in tomato cream', 460, 'mc-mains', 'kitchen', 20, '🍝'],
+    ['mi-burger', 'Beef burger & chips', '', 'House beef patty, cheese, salad and fries', 480, 'mc-mains', 'kitchen', 22, '🍔'],
+    ['mi-club', 'Club sandwich', '', 'Triple-decker with chicken, egg and chips', 420, 'mc-mains', 'kitchen', 15, '🥪'],
+    ['mi-sambusa', 'Sambusa (4 pcs)', '', 'Crisp pastry with lentil or beef filling', 120, 'mc-snacks', 'kitchen', 12, '🥟'],
+    ['mi-chips', 'Chips firfir', '', 'Fries tossed with berbere and tomato', 200, 'mc-snacks', 'kitchen', 12, '🍟'],
+    ['mi-fruit', 'Fruit platter', '', 'Seasonal fruit, cut to order', 280, 'mc-snacks', 'kitchen', 10, '🍉'],
+    ['mi-cake-slice', 'Black Forest cake (slice)', '', 'Chocolate sponge, cream and cherries', 220, 'mc-pastry', 'pastry', 8, '🍰'],
+    ['mi-cheesecake', 'Blueberry cheesecake', '', 'Baked cheesecake with blueberry topping', 260, 'mc-pastry', 'pastry', 8, '🍰'],
+    ['mi-birthday', 'Birthday cake (whole · 1 kg)', '', 'Order ahead: chocolate or vanilla, name written on top', 1450, 'mc-pastry', 'pastry', 45, '🎂'],
+    ['mi-croissant', 'Butter croissant', '', 'Baked fresh every morning', 150, 'mc-pastry', 'pastry', 5, '🥐'],
+    ['mi-donut', 'Doughnut (2 pcs)', '', 'Sugar-glazed, still warm', 120, 'mc-pastry', 'pastry', 5, '🍩'],
+    ['mi-cookie', 'Cookies (4 pcs)', '', 'Butter cookies with cardamom', 100, 'mc-pastry', 'pastry', 5, '🍪'],
+    ['mi-coffee', 'Ethiopian coffee', '', 'Single-origin, brewed the traditional way', 120, 'mc-coffee', 'barista', 8, '☕'],
+    ['mi-macchiato', 'Macchiato', '', 'Double espresso with steamed milk', 140, 'mc-coffee', 'barista', 6, '☕'],
+    ['mi-espresso', 'Espresso', '', 'Rich single shot', 110, 'mc-coffee', 'barista', 5, '☕'],
+    ['mi-tea', 'Black tea', '', 'With lemon or milk', 90, 'mc-coffee', 'barista', 5, '🫖'],
+    ['mi-hotchoc', 'Hot chocolate', '', 'Steamed milk and cocoa', 180, 'mc-coffee', 'barista', 7, '🍫'],
+    ['mi-mango', 'Fresh mango juice', '', 'Pressed to order, no added sugar', 200, 'mc-cold', 'juice', 7, '🥭'],
+    ['mi-avocado', 'Avocado juice', '', 'Creamy avocado with lime', 220, 'mc-cold', 'juice', 7, '🥑'],
+    ['mi-papaya', 'Papaya juice', '', 'Fresh papaya, lightly chilled', 200, 'mc-cold', 'juice', 7, '🍹'],
+    ['mi-spris', 'Spris', '', 'Layered avocado, mango and papaya', 240, 'mc-cold', 'juice', 9, '🍹'],
+    ['mi-water', 'Bottled water', '', '500 ml · still', 40, 'mc-cold', 'juice', 2, '💧'],
+    ['mi-ambo', 'Ambo mineral water', '', 'Sparkling · 500 ml', 60, 'mc-cold', 'juice', 2, '🫧'],
+    ['mi-coke', 'Soft drink', '', 'Coca-Cola, Sprite or Fanta', 80, 'mc-cold', 'juice', 2, '🥤'],
+    ['mi-beer', 'Local beer', '', 'St. George, Habesha or Dashen · 330 ml', 150, 'mc-bar', 'barista', 3, '🍺'],
+    ['mi-wine', 'House wine (glass)', '', 'Red or white, served by the glass', 320, 'mc-bar', 'barista', 3, '🍷'],
   ];
   const insertItem = db.prepare(`INSERT INTO menu_items (id, name, name_am, description, price, category_id, station, prep_minutes, available, emoji, sort)
                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`);

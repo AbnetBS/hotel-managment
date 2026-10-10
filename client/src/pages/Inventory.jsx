@@ -47,16 +47,12 @@ export default function Inventory() {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Store room · መጋዘን</div>
+          <div className="eyebrow">Store room</div>
           <h1>Inventory &amp; recipes</h1>
-          <p className="page-desc">
-            Stock moves by itself: every dish the kitchen finishes takes its ingredients off the shelf through the recipe.
-            You only record deliveries, wastage and purchases.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={load}><Icon name="rotate-ccw" size={14} /> Refresh</button>
-          <button className="btn btn-primary" onClick={() => setEditing({ name: '', unit: 'kg', stock: 0, min_stock: 0, cost: 0 })}>
+          <button className="btn btn-primary" onClick={() => setEditing({ name:'', unit: 'kg', stock: 0, min_stock: 0, cost: 0 })}>
             <Icon name="plus" size={15} /> New item
           </button>
         </div>
@@ -71,7 +67,6 @@ export default function Inventory() {
       {data.requests?.length ? (
         <Card
           title="Purchase requests waiting"
-          subtitle="Raised from a low item — tick them off when the delivery arrives"
           noBody
         >
           <table>
@@ -139,7 +134,7 @@ export default function Inventory() {
                 <tr key={item.id} style={item.low ? { background: '#fff7f5' } : undefined}>
                   <td>
                     <strong>{item.name}</strong>
-                    {item.name_am ? <div className="tiny muted">{item.name_am}</div> : null}
+                    
                   </td>
                   <td>
                     <strong>{item.stock} {item.unit}</strong>
@@ -194,7 +189,6 @@ function RecipeButton({ onOpen }) {
     <>
       <Card
         title="Recipe cost"
-        subtitle="What a plate costs the hotel — the recipe also drives stock automatically"
       >
         <div className="row" style={{ flexWrap: 'wrap' }}>
           {items.slice(0, 8).map((item) => (
@@ -206,7 +200,7 @@ function RecipeButton({ onOpen }) {
         </div>
       </Card>
       {open ? (
-        <Modal title="Choose a dish" subtitle="Set what one plate takes off the shelf" onClose={() => setOpen(false)} footer={<button className="btn" onClick={() => setOpen(false)}>Close</button>}>
+        <Modal title="Choose a dish" onClose={() => setOpen(false)} footer={<button className="btn" onClick={() => setOpen(false)}>Close</button>}>
           <div className="request-grid">
             {items.map((item) => (
               <button key={item.id} className="request-tile" onClick={() => { setOpen(false); onOpen(item.id); }}>
@@ -280,7 +274,7 @@ function ItemModal({ item, onClose, onDone }) {
   const { toast } = useApp();
   const isNew = !item.id;
   const [form, setForm] = useState({
-    name: item.name || '', name_am: item.name_am || '', unit: item.unit || 'kg',
+    name: item.name || '', unit: item.unit || 'kg',
     stock: item.stock ?? 0, min_stock: item.min_stock ?? 0, cost: item.cost ?? 0, supplier: item.supplier || '',
   });
   const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
@@ -299,7 +293,6 @@ function ItemModal({ item, onClose, onDone }) {
   return (
     <Modal
       title={isNew ? 'New stock item' : `Edit ${item.name}`}
-      subtitle="The minimum is what triggers the “needs buying” warning"
       onClose={onClose}
       footer={
         <>
@@ -310,8 +303,7 @@ function ItemModal({ item, onClose, onDone }) {
     >
       <div className="form-grid">
         <Field label="Name" required><input value={form.name} onChange={set('name')} autoFocus /></Field>
-        <Field label="Name in Amharic"><input value={form.name_am} onChange={set('name_am')} placeholder="optional" /></Field>
-        <Field label="Unit" hint="kg, L, pcs, rolls…"><input value={form.unit} onChange={set('unit')} /></Field>
+                <Field label="Unit" hint="kg, L, pcs, rolls…"><input value={form.unit} onChange={set('unit')} /></Field>
         {isNew ? <Field label="Opening stock"><input type="number" value={form.stock} onChange={set('stock')} /></Field> : null}
         <Field label="Minimum stock"><input type="number" value={form.min_stock} onChange={set('min_stock')} /></Field>
         <Field label="Unit cost (birr)"><input type="number" value={form.cost} onChange={set('cost')} /></Field>
@@ -347,7 +339,6 @@ function RecipeModal({ menuItemId, onClose }) {
   return (
     <Modal
       title={`${data.menuItem.name} · recipe`}
-      subtitle="One plate, and what it takes off the shelf"
       onClose={onClose}
       footer={
         <>
@@ -402,7 +393,7 @@ function RecipeModal({ menuItemId, onClose }) {
             </tr>
           ))}
           {lines.length === 0 ? (
-            <tr><td colSpan={4} className="small muted">Nothing yet — add the ingredients below.</td></tr>
+            <tr><td colSpan={4} className="small muted">Nothing yet</td></tr>
           ) : null}
         </tbody>
       </table>

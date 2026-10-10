@@ -24,10 +24,6 @@ export default function AdminProperty() {
         <div>
           <div className="eyebrow">Property setup</div>
           <h1>Rooms &amp; photos</h1>
-          <p className="page-desc">
-            The pictures and description here are exactly what the cashier shows a guest at the desk, and what a guest sees after scanning the
-            QR code. Prices drive every bill in the hotel.
-          </p>
         </div>
         <div className="row">
           <div className="seg">
@@ -229,7 +225,6 @@ function RoomTypeModal({ value, onClose, onDone }) {
   return (
     <Modal
       title={value.id ? `Edit ${value.name}` : 'New room type'}
-      subtitle="Prices and description used on the desk and on the guest QR page"
       onClose={onClose}
       size="wide"
       footer={
@@ -289,7 +284,6 @@ function NewRoomModal({ roomTypes, onClose, onDone }) {
   return (
     <Modal
       title="New room"
-      subtitle="A room gets its own QR code automatically."
       onClose={onClose}
       footer={
         <>

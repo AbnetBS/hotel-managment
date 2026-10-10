@@ -43,6 +43,14 @@ export default function Orders() {
         await api.post(`/orders/${order.id}/send`);
         toast(`Order #${order.code} sent — the stations have it now.`);
       }
+      if (action === 'ready') {
+        await api.post(`/orders/${order.id}/ready`);
+        toast(`Order #${order.code} — everything is up.`);
+      }
+      if (action === 'deliver') {
+        await api.post(`/orders/${order.id}/deliver`);
+        toast(`Order #${order.code} ${order.table_name ? 'served' : 'delivered'}.`);
+      }
       if (action === 'confirm') {
         await api.post(`/orders/${order.id}/confirm-call`);
         toast(`Order #${order.code} marked as confirmed with the guest.`);
@@ -78,10 +86,6 @@ export default function Orders() {
         <div>
           <div className="eyebrow">Every order, every stage</div>
           <h1>Orders desk</h1>
-          <p className="page-desc">
-            QR orders arrive here with a full-screen ring. Accept → call the guest → send to the stations. When the stations finish, the
-            waiter button lights up — and the money is added to the room bill the moment it is delivered.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => loadOrders()}>
@@ -102,7 +106,6 @@ export default function Orders() {
 
       <Card
         title="Filter by station"
-        subtitle="See only the tickets that touch one department"
         className="no-print"
       >
         <div className="chips">
@@ -142,8 +145,8 @@ export default function Orders() {
 
                   {order.status === 'accepted' ? (
                     <>
-                      <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'send'} onClick={() => act(order, 'send')}>
-                        <Icon name="send" size={13} /> Send to stations
+                      <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'ready'} onClick={() => act(order, 'ready')}>
+                        <Icon name="check" size={13} /> Food is up
                       </button>
                       {!order.call_confirmed ? (
                         <button className="btn btn-sm" onClick={() => act(order, 'confirm')}>
@@ -154,20 +157,27 @@ export default function Orders() {
                   ) : null}
 
                   {order.status === 'sent' ? (
-                    <div className="tiny muted">
-                      {order.items.filter((item) => item.status === 'done').length}/{order.items.length} item(s) finished ·{' '}
-                      {order.stations.map((station) => STATIONS[station]?.label || station).join(', ')}
-                    </div>
+                    <>
+                      <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'ready'} onClick={() => act(order, 'ready')}>
+                        <Icon name="check" size={13} /> Food is up
+                      </button>
+                      <div className="tiny muted">
+                        {order.items.filter((item) => item.status === 'done').length}/{order.items.length} item(s) finished ·{' '}
+                        {order.stations.map((station) => STATIONS[station]?.label || station).join(', ')}
+                      </div>
+                    </>
                   ) : null}
 
                   {order.status === 'ready' ? (
-                    <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'waiter'} onClick={() => act(order, 'waiter')}>
-                      <Icon name="send" size={13} /> Send waiter to Room {order.room_number}
+                    <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'deliver'} onClick={() => act(order, 'deliver')}>
+                      <Icon name="send" size={13} /> {order.table_name ? `Serve ${order.table_name}` : `Deliver to Room ${order.room_number}`}
                     </button>
                   ) : null}
 
                   {order.status === 'delivering' ? (
-                    <div className="tiny muted">With the waiter · {order.charged ? 'already on the bill' : 'will be charged on delivery'}</div>
+                    <button className="btn btn-sm btn-primary" disabled={busy === order.id + 'deliver'} onClick={() => act(order, 'deliver')}>
+                      <Icon name="check" size={13} /> Handed over
+                    </button>
                   ) : null}
 
                   {order.status === 'delivered' ? (
@@ -188,7 +198,7 @@ export default function Orders() {
       </div>
 
       <div style={{ height: 18 }} />
-      <Card title="Completed today" subtitle="Closed orders stay visible for the shift">
+      <Card title="Completed today">
         {grouped.completed.length === 0 ? (
           <Empty title="No completed orders yet" hint="Finished orders appear here with their total." icon="receipt" />
         ) : (
@@ -212,15 +222,6 @@ export default function Orders() {
       {showNew ? <NewOrderModal onClose={() => setShowNew(false)} /> : null}
       {detailId ? <OrderDetailModal orderId={detailId} onClose={() => setDetailId(null)} /> : null}
 
-      {settings.require_call_confirmation ? (
-        <div className="banner info" style={{ marginTop: 16 }}>
-          <Icon name="phone" size={15} />
-          <span>
-            Your hotel asks the desk to <strong>call and confirm</strong> every order before it goes to the kitchen — this reduces wasted food.
-            You can change that in Hotel settings.
-          </span>
-        </div>
-      ) : null}
     </>
   );
 }

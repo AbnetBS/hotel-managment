@@ -161,10 +161,10 @@ admin.post('/menu/items', (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: 'Item needs a name.' });
   const mid = id('mi');
-  db.prepare(`INSERT INTO menu_items (id, name, name_am, description, price, category_id, station, prep_minutes, available, emoji, sort)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(
+  db.prepare(`INSERT INTO menu_items (id, name, name_am, description, price, category_id, station, prep_minutes, available, emoji, photo, sort)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`).run(
     mid, b.name, b.name_am || null, b.description || '', Number(b.price) || 0, b.category_id || null,
-    b.station || 'kitchen', Number(b.prep_minutes) || 15, b.emoji || '🍽️', Number(b.sort) || 99,
+    b.station || 'kitchen', Number(b.prep_minutes) || 15, b.emoji || '🍽️', b.photo || null, Number(b.sort) || 99,
   );
   publish(['menu']);
   res.json({ ok: true, id: mid });
@@ -172,7 +172,7 @@ admin.post('/menu/items', (req, res) => {
 
 admin.patch('/menu/items/:id', (req, res) => {
   const b = req.body || {};
-  const fields = ['name', 'name_am', 'description', 'price', 'category_id', 'station', 'prep_minutes', 'available', 'emoji', 'sort'];
+  const fields = ['name', 'name_am', 'description', 'price', 'category_id', 'station', 'prep_minutes', 'available', 'emoji', 'photo', 'sort'];
   const updates = [];
   const params = [];
   for (const f of fields) {
@@ -192,6 +192,52 @@ admin.delete('/menu/items/:id', (req, res) => {
   db.prepare('UPDATE menu_items SET available = 0 WHERE id = ?').run(req.params.id);
   publish(['menu']);
   res.json({ ok: true, note: 'Item moved out of the menu (history stays on old bills).' });
+});
+
+/* -------------------------------- tables --------------------------------- */
+/** Tables get their own QR codes — guests scan and order straight to the desk. */
+
+admin.post('/tables', (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Give the table a name.' });
+  const tid = id('tbl');
+  db.prepare('INSERT INTO tables (id, name, seats, qr_token, active, sort, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)')
+    .run(tid, name, Number(b.seats) || 0, randomToken(12), Number(b.sort) || 99, nowIso());
+  publish(['tables']);
+  res.json({ ok: true, id: tid });
+});
+
+admin.patch('/tables/:id', (req, res) => {
+  const b = req.body || {};
+  const fields = ['name', 'seats', 'sort', 'active'];
+  const updates = [];
+  const params = [];
+  for (const f of fields) {
+    if (b[f] !== undefined) {
+      updates.push(`${f} = ?`);
+      params.push(f === 'active' ? (b[f] ? 1 : 0) : b[f]);
+    }
+  }
+  if (!updates.length) return res.json({ ok: true });
+  params.push(req.params.id);
+  db.prepare(`UPDATE tables SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  publish(['tables']);
+  res.json({ ok: true });
+});
+
+/** New QR code for a table (lost code, shared code, staff change). */
+admin.post('/tables/:id/qr', (req, res) => {
+  const token = randomToken(12);
+  db.prepare('UPDATE tables SET qr_token = ? WHERE id = ?').run(token, req.params.id);
+  publish(['tables']);
+  res.json({ ok: true, token });
+});
+
+admin.delete('/tables/:id', (req, res) => {
+  db.prepare('DELETE FROM tables WHERE id = ?').run(req.params.id);
+  publish(['tables']);
+  res.json({ ok: true });
 });
 
 /* --------------------------------- staff --------------------------------- */
@@ -292,7 +338,9 @@ admin.delete('/registration-fields/:id', (req, res) => {
 admin.patch('/settings', (req, res) => {
   const b = req.body || {};
   const editable = ['hotel_name', 'property_line', 'property_code', 'phone', 'address', 'currency', 'vat_percent', 'service_charge_percent',
-    'checkout_hour', 'grace_hours', 'wifi_name', 'wifi_password', 'receipt_footer', 'dayuse_default_hours', 'alert_sound', 'require_call_confirmation'];
+    'checkout_hour', 'grace_hours', 'wifi_name', 'wifi_password', 'receipt_footer', 'receipt_tin', 'dayuse_default_hours', 'alert_sound',
+    'require_call_confirmation', 'hero_title', 'hero_tagline', 'hero_image',
+    'receipt_name', 'receipt_address', 'receipt_phone', 'receipt_title', 'receipt_fs', 'receipt_footer2'];
   for (const key of editable) {
     if (b[key] !== undefined) setSetting(key, b[key]);
   }

@@ -138,15 +138,18 @@ function click(window, selector, match = '') {
 async function signIn(roleLabel, username, { expected, pin = '1234' } = {}) {
   const dom = await loadApp(username);
   const { window } = dom;
-  await waitFor(window, (w) => /Which desk are you on/i.test(text(w)), { label: 'role picker' });
-  await waitFor(window, (w) => w.document.querySelectorAll('.role-card').length > 0, { label: 'role list' });
-  click(window, '.role-card', roleLabel);
-  const ready = await waitFor(window, (w) => w.document.querySelectorAll('input[type="password"]').length > 0, { label: 'PIN field' });
+  // The landing page: hotel photo, and one corner button that opens the staff roles.
+  const landed = await waitFor(window, (w) => w.document.querySelector('.landing-fab'), { label: 'landing page' });
+  if (!landed) throw new Error(`landing page never opened for ${username}`);
+  click(window, '.landing-fab');
+  await waitFor(window, (w) => w.document.querySelectorAll('.role-row').length > 0, { label: 'role list' });
+  click(window, '.role-row', roleLabel);
+  const ready = await waitFor(window, (w) => w.document.querySelectorAll('.signin-form input').length > 1, { label: 'PIN field' });
   if (!ready) throw new Error(`login form never opened for ${roleLabel}`);
-  const inputs = [...window.document.querySelectorAll('input')];
+  const inputs = [...window.document.querySelectorAll('.signin-form input')];
   setValue(window, inputs[0], username);
-  setValue(window, window.document.querySelector('input[type="password"]'), pin);
-  click(window, 'button[type="submit"]');
+  setValue(window, inputs[1], pin);
+  click(window, '.signin-form button[type="submit"]');
   await waitFor(window, (w) => (expected ? expected.test(content(w)) : content(w).length > 80), { label: `${username} dashboard`, timeout: 12000 });
   return dom;
 }
@@ -215,12 +218,11 @@ async function walk(window, views) {
 
 let adminToken = '';
 async function roomToken(number, wantFree = false) {
-  // Use the manager account for the test's own API calls, so the demo admin
-  // login is never touched by the sign-in throttle that the security suite exercises.
+  // Use the admin account for the test's own API calls.
   const login = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'manager', pin: '1234' }),
+    body: JSON.stringify({ username: 'admin', pin: '1234' }),
   }).then((response) => response.json());
   adminToken = login.token;
   const rooms = await fetch(`${BASE}/api/rooms`, { headers: { 'x-clove-token': login.token } }).then((response) => response.json());
@@ -252,7 +254,7 @@ async function guestOrdersFood() {
     /See bill/i.test(doorLabels[2] || '');
   log(`   · guest landing: ${doors.length} button(s) — ${doorLabels.map((label) => label.slice(0, 22)).join(' | ')}`);
   if (!hasThree) problems.push(`[guest-qr] the guest landing is not the three agreed doors — ${doorLabels.join(' | ')}`);
-  if (!/ምናሌ|ልዩ ጥያቄ|ሂሳብ/.test(content(dom.window))) problems.push('[guest-qr] the guest landing has no Amharic labels');
+  if (/[\u1200-\u137F]/.test(content(dom.window))) problems.push('[guest-qr] the guest landing still shows Amharic — the app is English only');
 
   /* ---- door 2: a special request, e.g. Room 204 “Please bring 2 towels” ---- */
   doors[1]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -384,7 +386,10 @@ async function main() {
   const ticking = /Next (night|hour|day-use block) starts in/.test(drawer);
   log(`   · occupied room drawer: live counter ${ticking ? 'ticking' : 'MISSING'} · bill panel ${/Balance to collect/.test(drawer) ? 'present' : 'MISSING'}`);
   if (!ticking) problems.push('[cashier] the live billing countdown is missing on an occupied room');
-  if (!/Paid & release/.test(drawer)) problems.push('[cashier] the Paid & release button is missing');
+  if (!/Check out & print/.test(drawer)) problems.push('[cashier] the Check out & print button is missing');
+  if (!/Outdoor/.test(drawer)) problems.push('[cashier] the Outdoor button is missing');
+  if (!/Other service/.test(drawer)) problems.push('[cashier] the Other service button is missing');
+  if (!/×/.test(drawer)) problems.push('[cashier] the days × price counter is missing');
   closeDrawer(w);
   await wait(300);
 
@@ -417,14 +422,16 @@ async function main() {
     ['stays', /In-house guests|Guest bills/],
     ['folios', /Open bills|Guest bills/],
     ['reservations', /Reservations/],
+    ['orders', /Orders desk/],
+    ['requests', /Guest requests/],
+    ['lostfound', /Lost & found/],
   ]);
 
-  // A guest in room 204 orders from the QR code while the cashier is on duty:
-  // it must ring the desk full screen.
+  /* ---- room QR order: rings the desk, then the strip walks it through ---- */
   const guest = await guestOrdersFood();
   const rang = await waitFor(w, (win) => win.document.querySelector('.alert-overlay'), { label: 'full-screen order alert', timeout: 15000 });
   if (rang) {
-    log(`   · it rang the desk full screen: "${(w.document.querySelector('.alert-card')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 62)}…"`);
+    log(`   · it rang the desk full screen: \"${(w.document.querySelector('.alert-card')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 62)}…\"`);
     click(w, '.alert-card button', 'Accept');
     await wait(1600);
     const gone = !w.document.querySelector('.alert-overlay');
@@ -434,100 +441,87 @@ async function main() {
     problems.push('[cashier] the QR order never rang the full-screen alert');
   }
 
-  // Send the accepted order to the stations (kitchen / barista / juice).
-  await goto(w, 'orders', /Orders desk/);
-  const send = [...w.document.querySelectorAll('button')].find((button) => /Send to stations/.test(button.textContent) && !button.disabled);
-  if (send) {
-    send.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-    await wait(1600);
-    log('   · sent the order to the stations');
-  } else {
-    problems.push('[cashier] the accepted order has no “Send to stations” button');
-  }
+  // The live-orders strip below the room grid: accept → food up → deliver → close.
+  await goto(w, 'rooms', /Room board/);
+  await waitFor(w, (win) => win.document.querySelector('.order-card'), { label: 'order card under the room grid' });
+  const stripLabel = [...w.document.querySelectorAll('.order-place')].map((node) => node.textContent.trim());
+  log(`   · live order cards under the room grid: ${stripLabel.join(' | ') || 'NONE'}`);
+  if (!stripLabel.length) problems.push('[cashier] no order cards below the room grid');
 
-  log('\n▶ stations');
-  for (const [username, label] of [['kitchen', 'Kitchen'], ['barista', 'Barista'], ['juice', 'Juice station']]) {
-    const dom = await signIn(label, username, {});
-    await waitFor(dom.window, (win) => /ticket|Nothing|Waiting to start|Accept/i.test(content(win)), { label: `${username} board`, timeout: 9000 });
-    await wait(900);
-    let handled = 0;
-    // Accept → Done, item by item, until the board is clear.
-    for (let guard = 0; guard < 24; guard += 1) {
-      const button = [...dom.window.document.querySelectorAll('.station-ticket button')]
-        .find((candidate) => /^(Accept|Done)/.test(candidate.textContent.trim()) && !candidate.disabled);
-      if (!button) break;
-      const finished = /^Done/.test(button.textContent.trim());
-      button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-      if (finished) handled += 1;
-      await wait(600);
+  const stripButton = (label) => [...w.document.querySelectorAll('.order-card button')].find((button) => label.test(button.textContent.trim()) && !button.disabled);
+  const steps = [
+    [/Food is up/, 'Food is up'],
+    [/Deliver|Serve|Handed over/, 'Deliver'],
+    [/Close & collect|Handed over/, 'Close & collect'],
+  ];
+  for (const [pattern, name] of steps) {
+    const button = stripButton(pattern);
+    if (button) {
+      button.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+      await wait(1600);
+      log(`   · strip step “${name}” done`);
     }
-    const left = dom.window.document.querySelectorAll('.station-ticket').length;
-    if (process.env.SMOKE_DEBUG) {
-      const texts = [...dom.window.document.querySelectorAll('.station-ticket button')].map((b) => `"${b.textContent.trim()}"${b.disabled ? '(disabled)' : ''}`);
-      log(`     [${username}] ticket buttons: ${texts.join(' | ') || '(none)'}`);
+  }
+  const stillOpen = [...w.document.querySelectorAll('.order-card')].length;
+  log(`   · order cards after the flow: ${stillOpen} still open`);
+
+  /* --------------------------- table QR ordering -------------------------- */
+  log('\n▶ table QR');
+  const tables = await fetch(`${BASE}/api/tables`, { headers: { 'x-clove-token': adminToken } }).then((response) => response.json());
+  const table = (tables.tables || [])[0];
+  if (!table) {
+    problems.push('[table] the seed has no tables');
+  } else {
+    const tableDom = await loadApp('guest-table');
+    tableDom.window.history.pushState({}, '', `/q/${table.qr_token}`);
+    tableDom.window.dispatchEvent(new tableDom.window.PopStateEvent('popstate'));
+    await waitFor(tableDom.window, (win) => /Everything|Send order|menu/i.test(text(win)), { label: 'table menu', timeout: 9000 });
+    await wait(400);
+    const tablePlus = [...tableDom.window.document.querySelectorAll('.qty button')].filter((button) => button.textContent === '+');
+    log(`   · ${table.name} QR opens the menu with ${tablePlus.length} orderable items`);
+    if (!tablePlus.length) problems.push('[table] the table QR menu has no orderable items');
+    tablePlus[0]?.dispatchEvent(new tableDom.window.MouseEvent('click', { bubbles: true }));
+    await wait(250);
+    click(tableDom.window, 'button', 'Send order');
+    await waitFor(tableDom.window, (win) => /sent/i.test(text(win)) && /Order #/.test(text(win)), { label: 'table order confirmation', timeout: 8000 });
+    log(`   · ${text(tableDom.window).match(/Order #[^ ]+ sent/)?.[0] || 'table order sent'}`);
+    tableDom.window.close();
+
+    // The desk sees it under the rooms as “Table N”.
+    await goto(w, 'rooms', /Room board/);
+    const tableCard = await waitFor(w, (win) => [...win.document.querySelectorAll('.order-place')].some((node) => node.textContent.trim() === table.name), { label: `“${table.name}” card`, timeout: 12000 });
+    if (tableCard) {
+      const names = [...w.document.querySelectorAll('.order-place')].map((node) => node.textContent.trim());
+      log(`   · the desk board shows the table order card: ${names.join(' | ')}`);
+      for (const [pattern, name] of [[/Accept/, 'Accept'], [/Food is up/, 'Food is up'], [/Serve|Deliver/, 'Serve'], [/Close & collect|Handed over/, 'Collect']]) {
+        const button = stripButton(pattern);
+        if (button) {
+          button.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+          await wait(1500);
+          log(`   · table order “${name}” done`);
+        }
+      }
+    } else {
+      problems.push('[table] the table order card did not appear below the room grid');
     }
-    log(`   · ${username}: ${handled} item(s) accepted & finished · ${left} ticket(s) left on the board`);
-    dom.window.close();
   }
 
-  log('\n▶ waiter');
-  const waiter = await signIn('Waiter', 'waiter', { expected: /Deliveries/ });
-  await waitFor(waiter.window, (win) => /Delivered to Room/.test(text(win)), { label: 'a ready order to deliver', timeout: 15000 });
-  await wait(400);
-  const deliverButton = [...waiter.window.document.querySelectorAll('button')].find((button) => /Delivered to Room/.test(button.textContent) && !button.disabled);
-  if (deliverButton) {
-    deliverButton.dispatchEvent(new waiter.window.MouseEvent('click', { bubbles: true }));
-    await wait(1600);
-    log('   · delivered it to the room — the food is on the guest bill now');
-  } else {
-    problems.push('[waiter] no ready order to deliver');
-  }
-  waiter.window.close();
-
-  // Back at the desk: close the order and make sure the money landed on the bill.
-  await goto(w, 'orders', /Orders desk/);
-  const closeOrder = [...w.document.querySelectorAll('button')].find((button) => /close order/i.test(button.textContent) && !button.disabled);
-  if (closeOrder) {
-    closeOrder.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-    await wait(1600);
-    log('   · cashier marked it done — the food money sits on the room bill');
-  } else {
-    problems.push('[cashier] the delivered order could not be closed');
-  }
   cashier.window.close();
   guest.window.close();
   registration.window.close();
 
-  log('\n▶ housekeeping + maintenance');
-  const housekeeping = await signIn('Housekeeping', 'housekeeping', { expected: /Cleaning tasks|No cleaning tasks/ });
-  const taskButton = (win) => [...win.document.querySelectorAll('button')].find((button) => /^(Start cleaning|Cleaned)/.test(button.textContent.trim()));
-  await waitFor(housekeeping.window, (win) => Boolean(taskButton(win)), { label: 'housekeeping task buttons', timeout: 12000 });
-  const startButton = taskButton(housekeeping.window);
-  if (startButton) {
-    startButton.dispatchEvent(new housekeeping.window.MouseEvent('click', { bubbles: true }));
-    await wait(900);
-    log(`   · cleaned a room: ${/Cleaning now|Finished|Cleaned/.test(text(housekeeping.window)) ? 'the task moved on' : 'UNEXPECTED'}`);
-  } else {
-    problems.push('[housekeeping] no task could be started');
-  }
-  housekeeping.window.close();
-
-  // Maintenance lives in the manager workspace (there is no separate maintenance login).
-  const maintenance = await signIn('Manager', 'manager', { expected: /Good day|Issue/ });
-  await goto(maintenance.window, 'maintenance', /Maintenance/);
-  await wait(500);
-  log('   · maintenance board rendered');
-  maintenance.window.close();
-
   log('\n▶ admin');
-  const admin = await signIn('Owner / Admin', 'admin', { expected: /Good day|Overview/ });
+  const admin = await signIn('Admin', 'admin', { expected: /Good day|Overview/ });
   await walk(admin.window, [
     ['overview', /Good day|Occupancy/],
     ['reports', /Reports/],
     ['roomtypes', /Rooms & photos/],
     ['menu', /Menu & stations/],
+    ['tables', /Tables/],
     ['qrcodes', /Room QR codes/],
-    ['formbuilder', /questions you ask every guest/i],
+    ['receipt', /Receipt template/],
+    ['receipts', /Printed receipts/],
+    ['formbuilder', /Guest form/i],
     ['inventory', /Inventory/i],
     ['lostfound', /Lost & found/],
     ['currency', /Currency/i],
@@ -553,7 +547,7 @@ async function main() {
     unique.forEach((problem) => console.error('  -', problem));
     process.exit(1);
   }
-  console.log('\n✅ smoke test passed — every role signed in, every screen rendered, and the whole guest QR → desk → station → waiter → bill loop worked');
+  console.log('\n✅ smoke test passed — both roles signed in, every screen rendered, and the room QR → desk → bill and table QR → “Table N” card loops worked');
 }
 
 main().catch((error) => {

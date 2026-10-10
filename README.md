@@ -5,15 +5,16 @@ order from the room with a QR code, and the kitchen, barista and juice stations 
 exactly their own tickets. Everything is live — a tap at the desk shows up on the station
 screen in under a second.
 
-Built as a real application: **React front end + Node/Express API + SQLite database**
-(the old single-file demo lives in `legacy/`).
+Built as a real application: **React front end + Node/Express API**, with either the
+built-in **SQLite** file database or a **PostgreSQL** server (`DATABASE_URL=postgres://…`)
+— both are supported by the same code (the old single-file demo lives in `legacy/`).
 
 ---
 
 ## Run it
 
 ```bash
-npm install          # once
+npm install          # once (Node 22.5+)
 npm start            # API + built app  →  http://localhost:4000
 ```
 
@@ -27,35 +28,40 @@ npm run smoke        # headless walkthrough of every role and screen (needs npm 
 ```
 
 The database is a single file: `server/data/clove.db`. Delete it (or run
-`npm run reset-demo`) to start over.
+`npm run reset-demo`) to start over. Set `DATABASE_URL=postgres://user:pass@host:5432/db`
+to keep everything in PostgreSQL instead — the system picks the engine at boot.
+
+### Deploy on a VPS (Coolify)
+
+```bash
+cp .env.example .env      # set POSTGRES_PASSWORD
+docker compose up -d --build
+```
+
+One container serves the web app and the API, one PostgreSQL container holds the data.
+Coolify step-by-step (domains, HTTPS, volumes, health checks) is in **[COOLIFY.md](COOLIFY.md)**.
 
 ### Demo sign-ins — PIN `1234` for all
 
 | Role | Username | What they see |
 | --- | --- | --- |
-| Owner / Admin | `admin` | everything: rooms, prices, menu, staff, form builder, QR codes, reports, audit |
-| Manager | `manager` | KPI dashboard, reports, housekeeping, maintenance |
-| Cashier / Front desk | `cashier` | room board, check-in, orders, bills, payments |
-| Waiter | `waiter` | ready orders to take to the rooms |
-| Kitchen | `kitchen` | food tickets only |
-| Pastry & cake | `pastry` | cakes, pastry and dessert tickets only |
-| Barista | `barista` | coffee & bar tickets only |
-| Juice station | `juice` | juice & soft-drink tickets only |
-| Housekeeping | `housekeeping` | rooms to turn around |
+| Owner / Admin | `admin` | everything: rooms, prices, menu & photos, tables, receipt template, staff, form builder, QR codes, reports, audit |
+| Cashier / Front desk | `cashier` | room board, check-in, orders, tables, bills, payments, lost & found |
 
 ---
 
 ## The working day, end to end
 
-1. **Guest scans the QR code in the room** → menu opens on their phone → they tap items and send.
-2. **The order rings the cashier full screen** (sound + red alert). She taps
-   *Accept · called & confirmed* — that means she phoned the room and confirmed it.
-3. She **sends** it; every item goes to its own station (kitchen / barista / juice).
-4. The station taps **Accept** when it starts, **Done** when the plate leaves.
-5. When everything on the order is done, the desk gets a **Send waiter** button.
-6. The waiter delivers; **the money lands on the room bill automatically**.
-7. At checkout the cashier taps **Paid & release** — the room turns **purple (needs
-   cleaning)** and the cleaning alarm rings on the housekeeping board *and* at the desk
+1. **A guest scans the QR code** — in the room or at the table → the menu opens on their
+   phone → they tap items and send. Table codes open the menu straight away; room codes
+   also show the room and the guest's running bill.
+2. **The order rings the cashier full screen** (sound + red alert), and a card appears
+   under the room grid — labelled **Table 3** or **Room 105**.
+3. The cashier taps **Accept**, then **Food is up** when the kitchen is done.
+4. **Serve the table** (paid at the till) or **Deliver** to the room (**the money lands
+   on the room bill automatically**), then **Close & collect**.
+5. At checkout the cashier taps **Paid & release** — the room turns **purple (needs
+   cleaning)** and the cleaning alarm rings at the desk
    (most housekeepers here have no phone, so the cashier can see the room number and
    pass it on). When the room is done, either the housekeeper taps **Cleaned** on her
    board or the cashier taps **Cleaned** on the room — it turns **green (free)** again.
@@ -72,7 +78,7 @@ the cashier can do all of it by hand.
   and the bill starts counting.
 
 **The questions on that form are yours.** Admin → *Guest details* builds the registration
-form: label in English and Amharic, type (text, number, phone, email, date, select,
+form: label in English, type (text, number, phone, email, date, select,
 textarea), required or not, options, order. Add “Plate number” for hotels with parking,
 drop “Passport” if you never take foreign guests.
 
@@ -89,6 +95,71 @@ drop “Passport” if you never take foreign guests.
 
 Nothing changes these by hand: checking a guest out turns the room purple, starting a
 clean turns it blue, finishing turns it green (or inspected).
+
+### Receipts
+
+The receipt is laid out like the hotel's official paper slip — TIN, business name,
+address, telephone, **FS No.**, invoice code, `Description / Qty / Price / AMOUNT` rows,
+a big **TOTAL** and the payment line — but it adds **no tax lines and no QR block**:
+it is the demo/system receipt, not the fiscal one.
+
+The head and foot are a **form in the admin** (*Receipt template*): TIN, business name,
+address lines, telephone, invoice title, the next FS number and two footer lines. Every
+time the cashier taps **Print** the receipt claims the next FS number and prints on the
+order printer — the browser print dialog works with **any USB thermal receipt printer
+(80 mm)** the computer already knows; "Save as PDF" keeps an electronic copy. Order
+receipts (with totals) print the same way from the live-orders cards and the orders desk.
+
+### Check-in, prices and currencies
+
+The cashier clicks the room rectangle, fills the guest form (name, phone, ID…) and
+writes the **price per night** herself. Next to it is the **currency**: ETB by default,
+and clicking opens a searchable list — **the common ten first** (USD, EUR, GBP, AED,
+SAR, KES, TRY, ZAR, CNY, JPY), then almost every currency below. Foreign guests are
+the reason: the room is billed in their money.
+
+The room drawer leads with the counter — **days × the price she wrote = room total**
+in the guest's currency. Below it:
+
+- **Outdoor** — the same menu as the scanned QR. She picks items, edits or cancels
+  lines, then **Save**: the amount lands on the bill (in birr).
+- **Other service** — *Add service* (laundry, taxi…) and *Add item* (water, extra bed…)
+  rows, each with a name and price, then **Save**.
+
+### Separated money on the receipt
+
+When the guest pays in a foreign currency the receipt keeps the two purses apart:
+the **room block prints in that currency** (units × the price written at check-in),
+and **food, drinks and other services print in birr**, each with its own total.
+Payments print in the currency they were taken in.
+
+### Printed receipts — the admin keeps every copy
+
+Every **Print** leaves a soft copy on the admin page **Printed receipts** — date,
+invoice, FS number, room/table, guest, both totals and who printed it. Open one to
+see it exactly as printed (reprints keep their FS number). The reports add them up
+per period.
+
+### Rooms
+
+The rectangles are the owner's control board: **green = free**, **orange = someone
+is in**, purple/blue = cleaning. When the cashier does **Print & check out** the room
+goes **straight back to green** and the receipt is filed; a plain bill close still
+sends the room through housekeeping (purple → clean → green).
+
+### Tables & QR codes
+
+Every **table** and every **room** has its own unique QR code. The admin adds tables
+(*Tables & QR*), names them and prints the code sheet; guests at a table scan, see the
+menu (with photos) and order exactly like a room order. Table orders appear **below the
+rectangular rooms on the cashier dashboard**, labelled **Table N**, and are collected at
+the till instead of landing on a room bill.
+
+### Menu
+
+The admin builds the menu: categories, and items with **photo, name, description,
+price, station and category** — edit or remove any item. Photos show on the guest
+menu; removed items stay on old bills but leave the menu.
 
 ### Nothing is charged twice
 

@@ -5,7 +5,7 @@ import { Icon, ROLE_ICON } from './lib/icons.jsx';
 import { canSee, ROLES } from '../../shared/billing.js';
 import { dayShort } from './lib/format.js';
 
-import Login from './pages/Login.jsx';
+import Landing from './pages/Landing.jsx';
 // Guest pages stay in the first download — a guest standing at the door should
 // never wait for a second round-trip over hotel Wi-Fi.
 import GuestMenu from './pages/guest/GuestMenu.jsx';
@@ -54,13 +54,16 @@ export const NAV = {
   audit: { label: 'Audit log', icon: 'list' },
   station: { label: 'My station', icon: 'chef-hat' },
   deliveries: { label: 'Deliveries', icon: 'send' },
+  tables: { label: 'Tables & QR', icon: 'qr' },
+  receipt: { label: 'Receipt template', icon: 'print' },
+  receipts: { label: 'Printed receipts', icon: 'receipt' },
 };
 
 const NAV_GROUPS = [
   { key: 'overview', items: ['overview', 'reports'] },
   { key: 'front', label: 'Front desk', items: ['rooms', 'requests', 'orders', 'reservations', 'stays', 'folios'] },
   { key: 'service', label: 'Service', items: ['requests', 'station', 'deliveries', 'housekeeping', 'maintenance'] },
-  { key: 'setup', label: 'Hotel setup', items: ['roomtypes', 'menu', 'inventory', 'lostfound', 'currency', 'branches', 'qrcodes', 'formbuilder', 'staff', 'settings', 'audit'] },
+  { key: 'setup', label: 'Hotel setup', items: ['roomtypes', 'menu', 'tables', 'inventory', 'lostfound', 'currency', 'branches', 'qrcodes', 'receipt', 'receipts', 'formbuilder', 'staff', 'settings', 'audit'] },
 ];
 
 /** The current view + a setter, kept in step with the URL fragment. */
@@ -116,6 +119,9 @@ function Screen({ view, onNavigate }) {
     case 'staff': return <AdminTeam mode="staff" />;
     case 'formbuilder': return <AdminTeam mode="form" />;
     case 'qrcodes': return <AdminSystem mode="qrcodes" />;
+    case 'tables': return <AdminSystem mode="tables" />;
+    case 'receipt': return <AdminSystem mode="receipt" />;
+    case 'receipts': return <AdminSystem mode="receipts" />;
     case 'settings': return <AdminSystem mode="settings" />;
     case 'audit': return <AdminSystem mode="audit" />;
     default: return <Insights mode="overview" />;
@@ -255,7 +261,7 @@ function Shell() {
 
 function StaffApp() {
   const { user, loading } = useApp();
-  if (!user) return <Login />;
+  if (!user) return <Landing />;
   if (loading) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', height: '100vh', color: 'var(--ink-faint)' }}>

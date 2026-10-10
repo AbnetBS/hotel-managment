@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../lib/api.js';
+import { api, uploadPhoto } from '../lib/api.js';
 import { useApp } from '../lib/store.jsx';
 import { Icon } from '../lib/icons.jsx';
 import { money } from '../lib/format.js';
@@ -27,10 +27,6 @@ export default function AdminMenu() {
         <div>
           <div className="eyebrow">Food &amp; drink</div>
           <h1>Menu &amp; stations</h1>
-          <p className="page-desc">
-            Every item belongs to a station: <strong>kitchen</strong>, <strong>barista</strong> or <strong>juice</strong>. That is how an order
-            splits itself between the right screens — so the barista never sees a doro wat.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => setCategoryModal({ name: '', station: 'kitchen' })}>
@@ -47,8 +43,7 @@ export default function AdminMenu() {
           <Card key={station.key} title={station.label} subtitle={`${menu.items.filter((item) => item.station === station.key).length} item(s)`}>
             <div className="row">
               <div className="avatar"><Icon name={station.icon} size={16} /></div>
-              <div className="small muted">Tickets for these items go straight to the {station.label.toLowerCase()} screen.</div>
-            </div>
+                          </div>
           </Card>
         ))}
       </div>
@@ -87,8 +82,8 @@ export default function AdminMenu() {
               {items.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    <strong>{item.emoji} {item.name}</strong>
-                    <div className="tiny muted">{item.name_am || item.description}</div>
+                    <strong>{item.photo ? <img src={item.photo} alt="" style={{ width: 34, height: 26, objectFit: 'cover', borderRadius: 6, verticalAlign: 'middle', marginRight: 8, border: '1px solid var(--line)' }} /> : null}{item.emoji} {item.name}</strong>
+                    
                   </td>
                   <td className="small">{menu.categories.find((category) => category.id === item.category_id)?.name || '—'}</td>
                   <td><Pill status="sent">{STATIONS[item.station]?.label || item.station}</Pill></td>
@@ -130,13 +125,13 @@ export default function AdminMenu() {
 
       <div style={{ height: 16 }} />
 
-      <Card title="Categories" subtitle="Grouping shown to guests and to the cashier">
+      <Card title="Categories">
         <div className="grid grid-3">
           {menu.categories.map((category) => (
             <div className="row" key={category.id} style={{ justifyContent: 'space-between', border: '1px solid var(--line)', borderRadius: 11, padding: 12, background: '#fff' }}>
               <div>
                 <strong className="small">{category.name}</strong>
-                <div className="tiny muted">{category.name_am || ''} · {STATIONS[category.station]?.label}</div>
+                <div className="tiny muted">{STATIONS[category.station]?.label}</div>
               </div>
               <button className="btn btn-sm btn-ghost" onClick={() => setCategoryModal(category)}>
                 <Icon name="pencil" size={13} />
@@ -160,7 +155,6 @@ function ItemModal({ value, categories, onClose, onDone }) {
   return (
     <Modal
       title={value.id ? `Edit ${value.name}` : 'New menu item'}
-      subtitle="The station decides which screen gets the ticket."
       onClose={onClose}
       footer={
         <>
@@ -170,7 +164,7 @@ function ItemModal({ value, categories, onClose, onDone }) {
             disabled={!form.name}
             onClick={async () => {
               const payload = {
-                name: form.name, name_am: form.name_am, description: form.description, emoji: form.emoji,
+                name: form.name, description: form.description, emoji: form.emoji, photo: form.photo || null,
                 price: Number(form.price) || 0, category_id: form.category_id, station: form.station,
                 prep_minutes: Number(form.prep_minutes) || 15,
               };
@@ -221,6 +215,34 @@ function ItemModal({ value, categories, onClose, onDone }) {
         </Field>
         <Field label="Description" full>
           <input value={form.description || ''} onChange={(event) => set('description')(event.target.value)} />
+        </Field>
+        <Field label="Photo" full>
+          <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+            {form.photo ? <img src={form.photo} alt="" style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} /> : null}
+            <label className="btn btn-sm" style={{ cursor: 'pointer' }}>
+              <Icon name="upload" size={13} /> {form.photo ? 'Change photo' : 'Upload photo'}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const { url } = await uploadPhoto(file);
+                    set('photo')(url);
+                  } catch (error) {
+                    toast(error.message, 'error');
+                  }
+                }}
+              />
+            </label>
+            {form.photo ? (
+              <button className="btn btn-sm" onClick={() => set('photo')(null)}>
+                <Icon name="trash" size={13} /> Remove photo
+              </button>
+            ) : null}
+          </div>
         </Field>
       </div>
     </Modal>

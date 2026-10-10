@@ -48,12 +48,8 @@ function Currency() {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Money · ገንዘብ</div>
+          <div className="eyebrow">Money</div>
           <h1>Currency &amp; rates</h1>
-          <p className="page-desc">
-            The desk freezes the guest's rate at check-in, so the bill never moves. Pull the official rates from the
-            National Bank feed when there is internet — otherwise type today's rate and everything keeps working.
-          </p>
         </div>
         <div className="row">
           <button
@@ -97,7 +93,6 @@ function Currency() {
 
       <Card
         title="Rate card"
-        subtitle="Birr per one unit — used for the guest bill and for every dollar payment taken at the desk"
         noBody
       >
         <table>
@@ -163,7 +158,7 @@ function Currency() {
       </div>
 
       {foreignToday.length ? (
-        <Card title="Foreign currency taken today" subtitle="What the drawer should hold, currency by currency" noBody>
+        <Card title="Foreign currency taken today" noBody>
           <table>
             <thead><tr><th>Currency</th><th>Received</th><th>In birr</th><th>Rate used</th><th>Payments</th></tr></thead>
             <tbody>
@@ -203,23 +198,19 @@ function Branches() {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Group · ቅርንጫፎች</div>
+          <div className="eyebrow">Branches</div>
           <h1>Branches</h1>
-          <p className="page-desc">
-            Rooms, stays, orders and money already carry the branch they belong to. Add the second property here when the
-            group grows — the reports can then be read per branch instead of per paper file.
-          </p>
         </div>
       </div>
 
-      <Card title="Properties" subtitle="The first branch is the one this system is running on now" noBody>
+      <Card title="Properties" noBody>
         <table>
           <thead><tr><th>Name</th><th>Code</th><th>Address</th><th>Phone</th><th>Rooms</th><th>Status</th></tr></thead>
           <tbody>
             {branches.map((branch) => (
               <tr key={branch.id}>
                 <td><strong>{branch.name}</strong></td>
-                <td>{branch.code || '—'}</td>
+                <td>{branch.code ||'—'}</td>
                 <td className="small muted">{branch.address || '—'}</td>
                 <td className="small muted">{branch.phone || '—'}</td>
                 <td className="small muted">{branch.rooms ?? '—'}</td>
@@ -231,7 +222,7 @@ function Branches() {
       </Card>
 
       {user.role === 'admin' ? (
-        <Card title="Add a branch" subtitle="Rooms and staff can then be attached to it">
+        <Card title="Add a branch">
           <div className="form-grid">
             <Field label="Name" required><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Clove House · Hawassa" /></Field>
             <Field label="Short code"><input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder="HW" /></Field>

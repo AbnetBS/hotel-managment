@@ -114,6 +114,8 @@ export function stayView(stayId) {
     guest: guestView(guest),
     billing_mode: stay.billing_mode,
     rate: stay.rate,
+    // The price per night as written at check-in, in the guest's own currency.
+    rate_foreign: stay.rate_foreign ?? stay.rate,
     // The money the guest agreed to pay in, frozen at check-in.
     currency: stay.currency || 'ETB',
     fx_rate: stay.fx_rate || (stay.currency && stay.currency !== 'ETB' ? null : 1),
@@ -133,6 +135,7 @@ export function stayView(stayId) {
     items: clean.map((i) => ({
       id: i.id, kind: i.kind, description: i.description, qty: i.qty, amount: i.amount, station: i.station,
       method: i.method, order_id: i.order_id, created_at: i.created_at, bill_date: i.bill_date, created_by: i.created_by,
+      currency: i.currency || null, foreign_amount: i.foreign_amount || null,
     })),
     voidItems: items.filter((i) => i.void).map((i) => ({ id: i.id, description: i.description, amount: i.amount })),
     orderCodes: orders.map((o) => o.code),
@@ -159,7 +162,8 @@ export function menu() {
     .map((c) => ({ id: c.id, name: c.name, name_am: c.name_am, station: c.station, sort: c.sort, active: !!c.active }));
   const items = db.prepare('SELECT * FROM menu_items ORDER BY sort, name').all().map((i) => ({
     id: i.id, name: i.name, name_am: i.name_am, description: i.description, price: i.price,
-    category_id: i.category_id, station: i.station, prep_minutes: i.prep_minutes, available: !!i.available, emoji: i.emoji, sort: i.sort,
+    category_id: i.category_id, station: i.station, prep_minutes: i.prep_minutes, available: !!i.available,
+    emoji: i.emoji, photo: i.photo || null, sort: i.sort,
   }));
   return { categories, items };
 }
@@ -175,6 +179,7 @@ export function orderView(rowOrId) {
   const row = typeof rowOrId === 'string' ? db.prepare('SELECT * FROM orders WHERE id = ?').get(rowOrId) : rowOrId;
   if (!row) return null;
   const room = row.room_id ? db.prepare('SELECT * FROM rooms WHERE id = ?').get(row.room_id) : null;
+  const table = row.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(row.table_id) : null;
   const items = orderItems(row.id);
   const stations = [...new Set(items.map((i) => i.station))];
   const allDone = items.length > 0 && items.every((i) => i.status === 'done' || i.status === 'served');
@@ -182,6 +187,8 @@ export function orderView(rowOrId) {
     id: row.id, code: row.code, channel: row.channel, status: row.status, note: row.note, total: row.total,
     call_confirmed: !!row.call_confirmed, charged: !!row.charged, cancel_reason: row.cancel_reason,
     room_id: row.room_id, room_number: room?.number || '—', stay_id: row.stay_id, guest_name: row.guest_name,
+    table_id: row.table_id || null, table_name: table?.name || null,
+    place: table ? table.name : room ? `Room ${room.number}` : 'Counter',
     created_at: row.created_at, accepted_at: row.accepted_at, sent_at: row.sent_at, ready_at: row.ready_at,
     delivering_at: row.delivering_at, delivered_at: row.delivered_at, closed_at: row.closed_at,
     created_by: row.created_by, accepted_by: row.accepted_by, delivered_by: row.delivered_by,
@@ -263,6 +270,43 @@ export function reservations() {
   });
 }
 
+export function receipts({ search, limit = 100 } = {}) {
+  const rows = search
+    ? db.prepare(`SELECT * FROM receipts WHERE room_label LIKE ? OR guest_name LIKE ? OR invoice_no LIKE ?
+                  ORDER BY printed_at DESC LIMIT ?`).all(`%${search}%`, `%${search}%`, `%${search}%`, limit)
+    : db.prepare('SELECT * FROM receipts ORDER BY printed_at DESC LIMIT ?').all(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    invoice_no: r.invoice_no,
+    kind: r.kind,
+    stay_id: r.stay_id,
+    order_id: r.order_id,
+    room_label: r.room_label,
+    guest_name: r.guest_name,
+    currency: r.currency || 'ETB',
+    fx_rate: r.fx_rate || 1,
+    room_total_foreign: r.room_total_foreign || 0,
+    room_total_etb: r.room_total_etb || 0,
+    extras_total_etb: r.extras_total_etb || 0,
+    total_etb: r.total_etb || 0,
+    rows: JSON.parse(r.rows_json || '[]'),
+    meta: JSON.parse(r.meta_json || '[]'),
+    fs: r.fs,
+    printed_by: r.printed_by,
+    printed_at: r.printed_at,
+  }));
+}
+
+export function tables() {
+  return db.prepare('SELECT * FROM tables ORDER BY sort, name').all().map((t) => ({
+    id: t.id, name: t.name, seats: t.seats, qr_token: t.qr_token, active: !!t.active, sort: t.sort, created_at: t.created_at,
+  }));
+}
+
+export function tableByToken(token) {
+  return db.prepare('SELECT * FROM tables WHERE qr_token = ?').get(token) || null;
+}
+
 export function users() {
   return db.prepare('SELECT * FROM users ORDER BY role, name').all().map((u) => ({
     id: u.id, name: u.name, username: u.username, role: u.role, phone: u.phone, active: !!u.active, created_at: u.created_at, last_login_at: u.last_login_at,
@@ -289,9 +333,14 @@ export function auditLog({ limit = 120 } = {}) {
 }
 
 export function nextOrderCode() {
-  const row = db.prepare("SELECT MAX(CAST(code AS INTEGER)) AS max FROM orders WHERE code GLOB '[0-9]*'").get();
-  const base = row?.max && row.max > 1000 ? row.max : 1041;
-  return String(base + 1);
+  // Kept database-agnostic (no SQLite GLOB): order codes are plain numbers.
+  const rows = db.prepare("SELECT code FROM orders WHERE code IS NOT NULL").all();
+  let max = 0;
+  for (const row of rows) {
+    const n = Number.parseInt(row.code, 10);
+    if (Number.isFinite(n) && String(n) === String(row.code).trim() && n > max) max = n;
+  }
+  return String((max > 1000 ? max : 1041) + 1);
 }
 
 export function logEvent(orderId, actor, type, detail) {

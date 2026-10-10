@@ -21,9 +21,13 @@ export function revenueSummary({ from, to } = {}) {
   const discounts = Math.abs(sum(['discount']));
   const payments = Math.abs(sum(['payment']));
 
-  const counterOrders = db.prepare(`SELECT * FROM orders WHERE channel = 'counter' AND charged = 1 AND status = 'completed'
+  const counterOrders = db.prepare(`SELECT * FROM orders WHERE channel IN ('counter','table') AND charged = 1 AND status = 'completed'
                                      AND substr(closed_at, 1, 10) BETWEEN ? AND ?`).all(range.from, range.to);
   const counterSales = counterOrders.reduce((s, o) => s + o.total, 0);
+
+  // Every printed slip the desk produced — the owner's paper trail, added up.
+  const printed = db.prepare(`SELECT * FROM receipts WHERE substr(printed_at, 1, 10) BETWEEN ? AND ?`).all(range.from, range.to);
+  const printedTotal = printed.reduce((s, r) => s + (Number(r.total_etb) || 0), 0);
 
   const methods = {};
   for (const i of items.filter((x) => x.kind === 'payment')) {
@@ -52,6 +56,8 @@ export function revenueSummary({ from, to } = {}) {
     methods,
     byStation,
     counterOrderCount: counterOrders.length,
+    printedCount: printed.length,
+    printedTotal,
   };
 }
 
@@ -158,6 +164,45 @@ export function trends({ days = 7 } = {}) {
     out.push({ date, room: r.rooms, food: r.food, service: r.service, total: r.net, checkouts: closed });
   }
   return out;
+}
+
+/**
+ * The owner's report buckets: the last 3 days day by day, then a week total,
+ * then a month total. Recent detail first, long memory second.
+ */
+export function periods() {
+  const today = todayStr();
+  const dayMs = 86400 * 1000;
+
+  const last3 = [];
+  for (let i = 2; i >= 0; i -= 1) {
+    const date = new Date(Date.now() - i * dayMs).toISOString().slice(0, 10);
+    const r = revenueSummary({ from: date, to: date });
+    const checkouts = db.prepare("SELECT COUNT(*) AS n FROM stays WHERE substr(check_out_at,1,10) = ?").get(date).n;
+    last3.push({
+      label: date, from: date, to: date,
+      rooms: r.rooms, food: r.food, service: r.service, other: r.other,
+      discounts: r.discounts, net: r.net, payments: r.payments, checkouts,
+    });
+  }
+
+  const weekFrom = new Date(Date.now() - 6 * dayMs).toISOString().slice(0, 10);
+  const week = revenueSummary({ from: weekFrom, to: today });
+  const monthFrom = `${today.slice(0, 7)}-01`;
+  const month = revenueSummary({ from: monthFrom, to: today });
+
+  const bucket = (label, from, to, r, days) => ({
+    label, from, to, days,
+    rooms: r.rooms, food: r.food, service: r.service, other: r.other,
+    discounts: r.discounts, net: r.net, payments: r.payments,
+  });
+
+  return {
+    today,
+    days: last3,
+    week: bucket('This week', weekFrom, today, week, 7),
+    month: bucket('This month', monthFrom, today, month, Number(today.slice(8))),
+  };
 }
 
 export function guestHistory({ search } = {}) {

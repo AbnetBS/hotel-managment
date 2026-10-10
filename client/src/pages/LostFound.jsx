@@ -35,12 +35,8 @@ export default function LostFound() {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Found around the hotel · የጠፉ እቃዎች</div>
+          <div className="eyebrow">Lost &amp; found</div>
           <h1>Lost &amp; found</h1>
-          <p className="page-desc">
-            Every item found in a room or a public area is written here with the shelf it sits on — so a phone call
-            three weeks later takes seconds, not a walk to the store room.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={load}><Icon name="rotate-ccw" size={14} /> Refresh</button>
@@ -52,7 +48,7 @@ export default function LostFound() {
 
       <div className="grid grid-3" style={{ marginBottom: 18 }}>
         <Stat label="On the shelf" value={stored.length} icon="box" foot="Waiting for an owner" />
-        <Stat label="Returned" value={items.filter((item) => item.status === 'returned').length} icon="check-circle" foot="Back with the guest" />
+        <Stat label="Returned" value={items.filter((item) => item.status ==='returned').length} icon="check-circle" foot="Back with the guest" />
         <Stat label="Thrown away" value={items.filter((item) => item.status === 'disposed').length} icon="trash" foot="Kept too long" />
       </div>
 
@@ -67,7 +63,7 @@ export default function LostFound() {
       {visible.length === 0 ? (
         <Empty title="Nothing here" hint="Log what the housekeepers bring down from the rooms." icon="box" />
       ) : (
-        <Card title="Items" subtitle="Newest first" noBody>
+        <Card title="Items" noBody>
           <table>
             <thead>
               <tr>
@@ -146,7 +142,6 @@ function AddModal({ rooms, onClose, onDone }) {
   return (
     <Modal
       title="Log a found item"
-      subtitle="Write it down while you still remember where it was found"
       onClose={onClose}
       footer={
         <>
@@ -197,7 +192,6 @@ function ReturnModal({ item, onClose, onDone }) {
   return (
     <Modal
       title={`Return “${item.item}”`}
-      subtitle="Who took it, and from where — so the record is complete"
       onClose={onClose}
       footer={
         <>
