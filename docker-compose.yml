@@ -1,0 +1,42 @@
+# VPS / Coolify stack: PostgreSQL + the hotel app in one command.
+#
+#   cp .env.example .env   (set POSTGRES_PASSWORD)
+#   docker compose up -d --build
+#
+# The app is then on http://<server>:4000 — put it behind Coolify's proxy for HTTPS.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clove
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: clove
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clove -d clove"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://clove:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/clove
+    volumes:
+      - uploads:/app/server/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  uploads:

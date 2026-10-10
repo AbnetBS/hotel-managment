@@ -24,16 +24,16 @@ import { postFolioItem, activeStayForRoom, roomById, createMaintenance } from '.
  * ========================================================================== */
 
 export const REQUEST_KINDS = {
-  food: { key: 'food', label: 'Food', am: 'ምግብ', department: 'waiter', icon: 'utensils', priced: true },
-  water: { key: 'water', label: 'Water', am: 'ውሃ', department: 'housekeeping', icon: 'droplet', free: true },
-  towel: { key: 'towel', label: 'Towels / linen', am: 'ፎጣ', department: 'housekeeping', icon: 'layers', free: true },
-  housekeeping: { key: 'housekeeping', label: 'Clean my room', am: 'ክፍሌን ያጽዱ', department: 'housekeeping', icon: 'broom', free: true },
-  laundry: { key: 'laundry', label: 'Laundry', am: 'ልብስ ማጠቢያ', department: 'housekeeping', icon: 'shirt', priced: true },
-  room_service: { key: 'room_service', label: 'Room service', am: 'የክፍል አገልግሎት', department: 'waiter', icon: 'bell', priced: true },
-  maintenance: { key: 'maintenance', label: 'Something is broken', am: 'ጥገና', department: 'maintenance', icon: 'wrench', free: true },
-  transportation: { key: 'transportation', label: 'Taxi / transport', am: 'ታክሲ', department: 'desk', icon: 'car', priced: true },
-  checkout: { key: 'checkout', label: 'I want to check out', am: 'መውጣት እፈልጋለሁ', department: 'desk', icon: 'log-out', free: true },
-  other: { key: 'other', label: 'Something else', am: 'ሌላ', department: 'desk', icon: 'message', priced: true },
+  food: { key: 'food', label: 'Food', department: 'waiter', icon: 'utensils', priced: true },
+  water: { key: 'water', label: 'Water', department: 'housekeeping', icon: 'droplet', free: true },
+  towel: { key: 'towel', label: 'Towels / linen', department: 'housekeeping', icon: 'layers', free: true },
+  housekeeping: { key: 'housekeeping', label: 'Clean my room', department: 'housekeeping', icon: 'broom', free: true },
+  laundry: { key: 'laundry', label: 'Laundry', department: 'housekeeping', icon: 'shirt', priced: true },
+  room_service: { key: 'room_service', label: 'Room service', department: 'waiter', icon: 'bell', priced: true },
+  maintenance: { key: 'maintenance', label: 'Something is broken', department: 'maintenance', icon: 'wrench', free: true },
+  transportation: { key: 'transportation', label: 'Taxi / transport', department: 'desk', icon: 'car', priced: true },
+  checkout: { key: 'checkout', label: 'I want to check out', department: 'desk', icon: 'log-out', free: true },
+  other: { key: 'other', label: 'Something else', department: 'desk', icon: 'message', priced: true },
 };
 
 /** Who gets rung for each department. */
@@ -73,7 +73,6 @@ export function createGuestRequest({ roomId, stayId, kind, note, priority, actor
     request_kind: meta.key,
     room: room?.number,
     title: `Room ${room?.number} · ${meta.label}${note ? ` — ${note}` : ''}`,
-    am: meta.am,
     note: note || null,
     at: Date.now(),
   });

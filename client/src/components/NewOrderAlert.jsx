@@ -101,10 +101,6 @@ export default function NewOrderAlert({ onOpenOrders }) {
             Later
           </button>
         </div>
-        <div className="tiny muted" style={{ padding: '0 22px 18px' }}>
-          {settings.require_call_confirmation ? 'Your hotel asks the desk to call the guest before the food is prepared.' : ''}
-          {' '}The order stays in the Orders desk until it is accepted.
-        </div>
       </div>
     </div>
   );

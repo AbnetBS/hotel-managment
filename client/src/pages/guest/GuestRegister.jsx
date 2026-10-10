@@ -77,10 +77,6 @@ export default function GuestRegister({ token }) {
               <Icon name="check" size={26} />
             </div>
             <h1 style={{ fontSize: 26 }}>Thank you!</h1>
-            <p className="page-desc" style={{ margin: '12px auto 0' }}>
-              Your details were sent to the reception desk. A staff member will confirm your room and hand you the key — usually within a
-              minute. Please keep this page open or come to the desk.
-            </p>
             <div className="banner info" style={{ marginTop: 18, textAlign: 'left' }}>
               <Icon name="phone" size={15} />
               <span>Reception: {hotel.phone}</span>
@@ -161,7 +157,7 @@ export default function GuestRegister({ token }) {
                   <div className={`field ${field.type === 'textarea' ? 'full' : ''}`} key={field.id}>
                     <label>
                       {field.label} {field.required ? <span className="req">*</span> : null}
-                      {field.label_am ? <span className="muted"> · {field.label_am}</span> : null}
+                      
                     </label>
                     {field.type === 'select' ? (
                       <select value={values[field.key] || ''} onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}>

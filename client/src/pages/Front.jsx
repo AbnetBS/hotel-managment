@@ -5,6 +5,7 @@ import { Icon } from '../lib/icons.jsx';
 import { money, formatElapsed, dateOf, dateTimeOf, nightsBetween } from '../lib/format.js';
 import { Stat, Empty, Card, Modal, Field, Pill, Drawer } from '../lib/ui.jsx';
 import { CheckoutModal, PaymentModal, IdDocumentCard } from './Rooms.jsx';
+import { ReceiptModal } from '../components/Receipt.jsx';
 import { computeRoomCharge } from '../../../shared/billing.js';
 
 /** What the desk can do with a booking, exactly as a real hotel works it. */
@@ -39,9 +40,6 @@ function Reservations() {
         <div>
           <div className="eyebrow">Coming up</div>
           <h1>Reservations</h1>
-          <p className="page-desc">
-            Keep the diary here so the room board tells the truth: reserved rooms show amber and cannot be sold twice.
-          </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>
           <Icon name="plus" size={15} /> New reservation
@@ -64,7 +62,7 @@ function Reservations() {
         />
       </div>
 
-      <Card title="Booking diary" subtitle="Soonest arrival first" noBody>
+      <Card title="Booking diary" noBody>
         {reservations.length === 0 ? (
           <Empty title="No reservations yet" hint="Add the first booking and it will show here." icon="calendar" />
         ) : (
@@ -158,7 +156,6 @@ function NewReservationModal({ rooms, roomTypes, onClose, onDone }) {
   return (
     <Modal
       title="New reservation"
-      subtitle="Hold the room in the diary before the guest arrives."
       onClose={onClose}
       footer={
         <>
@@ -258,11 +255,6 @@ function Stays({ mode }) {
         <div>
           <div className="eyebrow">In house right now</div>
           <h1>{mode === 'folios' ? 'Guest bills' : 'In-house guests'}</h1>
-          <p className="page-desc">
-            {mode === 'folios'
-              ? 'Every open bill with the live room charge, food and drinks, deposits and the balance still to collect.'
-              : 'Who is in which room, since when, and how much they owe. Open a guest to see and settle the whole bill.'}
-          </p>
         </div>
         <button className="btn" onClick={refresh}>
           <Icon name="rotate-ccw" size={14} /> Refresh
@@ -275,7 +267,7 @@ function Stays({ mode }) {
         <Stat label="Still to collect" value={money(outstanding)} icon="banknote" alert={outstanding > 0} foot="Deposits already taken off" />
       </div>
 
-      <Card title={mode === 'folios' ? 'Open bills' : 'Active stays'} subtitle="Ordered by check-in" noBody>
+      <Card title={mode === 'folios' ? 'Open bills' : 'Active stays'} noBody>
         {enriched.length === 0 ? (
           <Empty title="Nobody is checked in" hint="Check a guest in from the room board and their bill appears here." icon="users" />
         ) : (
@@ -352,6 +344,7 @@ function Stays({ mode }) {
 }
 
 function FolioDrawer({ stayId, onClose, onChanged }) {
+  const [receipt, setReceipt] = useState(false);
   const { toast } = useApp();
   const [data, setData] = useState(null);
 
@@ -409,7 +402,7 @@ function FolioDrawer({ stayId, onClose, onChanged }) {
       </div>
 
       {orders.length ? (
-        <Card title="Orders" subtitle="Attached to this room" noBody>
+        <Card title="Orders" noBody>
           {orders.map((order) => (
             <div className="bill-line" key={order.id}>
               <div className="desc">
@@ -423,7 +416,7 @@ function FolioDrawer({ stayId, onClose, onChanged }) {
       ) : null}
 
       {stay.voidItems?.length ? (
-        <Card title="Voided charges" subtitle="Kept for the audit trail" noBody>
+        <Card title="Voided charges" noBody>
           {stay.voidItems.map((item) => (
             <div className="bill-line" key={item.id}>
               <div className="desc muted">{item.description}</div>
@@ -451,8 +444,18 @@ function FolioDrawer({ stayId, onClose, onChanged }) {
         >
           <Icon name="rotate-ccw" size={14} /> Refresh
         </button>
+        <button className="btn" onClick={() => setReceipt(true)}>
+          <Icon name="print" size={14} /> Print receipt
+        </button>
         <button className="btn btn-danger" onClick={onClose}>Close</button>
       </div>
+      {receipt ? (
+        <ReceiptModal
+          folio={stay}
+          room={{ number: stay.room_number }}
+          onClose={() => setReceipt(false)}
+        />
+      ) : null}
     </Drawer>
   );
 }
@@ -475,7 +478,7 @@ function PostServiceCard({ stayId, onPosted }) {
   if (!services.length) return null;
 
   return (
-    <Card title="Post a service to this room" subtitle="Charged to the bill straight away">
+    <Card title="Post a service to this room">
       <div className="row" style={{ marginBottom: 10 }}>
         <span className="small muted">Quantity</span>
         <div className="qty">

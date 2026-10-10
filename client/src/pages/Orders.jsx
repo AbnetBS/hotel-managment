@@ -78,10 +78,6 @@ export default function Orders() {
         <div>
           <div className="eyebrow">Every order, every stage</div>
           <h1>Orders desk</h1>
-          <p className="page-desc">
-            QR orders arrive here with a full-screen ring. Accept → call the guest → send to the stations. When the stations finish, the
-            waiter button lights up — and the money is added to the room bill the moment it is delivered.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => loadOrders()}>
@@ -102,7 +98,6 @@ export default function Orders() {
 
       <Card
         title="Filter by station"
-        subtitle="See only the tickets that touch one department"
         className="no-print"
       >
         <div className="chips">
@@ -167,7 +162,7 @@ export default function Orders() {
                   ) : null}
 
                   {order.status === 'delivering' ? (
-                    <div className="tiny muted">With the waiter · {order.charged ? 'already on the bill' : 'will be charged on delivery'}</div>
+                    <div className="tiny muted">With the waiter · {order.charged ? 'On the bill' : 'Charged on delivery'}</div>
                   ) : null}
 
                   {order.status === 'delivered' ? (
@@ -188,7 +183,7 @@ export default function Orders() {
       </div>
 
       <div style={{ height: 18 }} />
-      <Card title="Completed today" subtitle="Closed orders stay visible for the shift">
+      <Card title="Completed today">
         {grouped.completed.length === 0 ? (
           <Empty title="No completed orders yet" hint="Finished orders appear here with their total." icon="receipt" />
         ) : (
@@ -212,15 +207,6 @@ export default function Orders() {
       {showNew ? <NewOrderModal onClose={() => setShowNew(false)} /> : null}
       {detailId ? <OrderDetailModal orderId={detailId} onClose={() => setDetailId(null)} /> : null}
 
-      {settings.require_call_confirmation ? (
-        <div className="banner info" style={{ marginTop: 16 }}>
-          <Icon name="phone" size={15} />
-          <span>
-            Your hotel asks the desk to <strong>call and confirm</strong> every order before it goes to the kitchen — this reduces wasted food.
-            You can change that in Hotel settings.
-          </span>
-        </div>
-      ) : null}
     </>
   );
 }

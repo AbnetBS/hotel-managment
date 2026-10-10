@@ -33,11 +33,7 @@ function Overview({ onNavigate }) {
       <div className="page-head">
         <div>
           <div className="eyebrow">{dayLong(Date.now())} · {settings.property_line}</div>
-          <h1>Good day — here is the hotel right now</h1>
-          <p className="page-desc">
-            Occupancy, money and the things that need a decision. Everything below is live: the cashier, the stations and the waiter board
-            are all feeding this page.
-          </p>
+          <h1>Overview</h1>
         </div>
         <div className="row">
           <button className="btn" onClick={() => onNavigate('rooms')}>
@@ -59,7 +55,7 @@ function Overview({ onNavigate }) {
       <TodayAtAGlance snapshot={snapshot} orders={orders} requests={requests} maintenance={maintenance} onNavigate={onNavigate} />
 
       <div className="grid grid-main" style={{ marginBottom: 18 }}>
-        <Card title="Revenue mix · today" subtitle="Posted charges by department">
+        <Card title="Revenue mix · today">
           <Bars
             rows={[
               { label: 'Rooms', value: snapshot?.accruedRoomCharges || 1, display: money(snapshot?.accruedRoomCharges || 0), tone: 'room' },
@@ -67,13 +63,9 @@ function Overview({ onNavigate }) {
               { label: 'Services & other', value: 0.4, display: 'See reports', tone: 'service' },
             ]}
           />
-          <div className="banner info" style={{ marginTop: 16 }}>
-            <Icon name="chart" size={15} />
-            <span>Open <strong>Reports</strong> for the day close: how much cash should be in the drawer, sales per station and the guest list.</span>
-          </div>
         </Card>
 
-        <Card title="Needs attention" subtitle="Live queues">
+        <Card title="Needs attention">
           <div className="stack">
             <QueueRow
               icon="bell"
@@ -117,7 +109,6 @@ function Overview({ onNavigate }) {
       <div className="grid grid-main">
         <Card
           title="Guests in house"
-          subtitle="Live bill including the room that is still counting"
           noBody
           action={<button className="btn btn-sm" onClick={() => onNavigate('stays')}>Manage <Icon name="arrow-right" size={13} /></button>}
         >
@@ -214,6 +205,7 @@ function Reports() {
   const [daily, setDaily] = useState(null);
   const [guests, setGuests] = useState([]);
   const [search, setSearch] = useState('');
+  const [periods, setPeriods] = useState(null);
 
   const range = useMemo(() => {
     const today = new Date();
@@ -224,12 +216,14 @@ function Reports() {
 
   const load = async () => {
     try {
-      const [summary, close] = await Promise.all([
+      const [summary, close, buckets] = await Promise.all([
         api.get(`/reports/summary?from=${range.from}&to=${range.to}&days=7`),
         api.get(`/reports/daily?date=${new Date().toISOString().slice(0, 10)}`),
+        api.get('/reports/periods'),
       ]);
       setData(summary);
       setDaily(close);
+      setPeriods(buckets);
     } catch (error) {
       toast(error.message, 'error');
     }
@@ -258,9 +252,6 @@ function Reports() {
         <div>
           <div className="eyebrow">Owner’s numbers</div>
           <h1>Reports &amp; daily close</h1>
-          <p className="page-desc">
-            Where the money came from, what should be in the drawer, which department sold what, and the history of every guest who stayed.
-          </p>
         </div>
         <div className="row">
           <Seg value={preset} onChange={setPreset} options={PRESETS} />
@@ -277,8 +268,38 @@ function Reports() {
         <Stat label="Money received" value={money(revenue.payments)} icon="banknote" foot={`${money(revenue.discounts)} in discounts`} />
       </div>
 
+      <div style={{ marginBottom: 18 }}>
+      <Card title="Periods">
+        <div className="periods-table">
+          <div className="pt-head">
+            <span>Period</span><span>Rooms</span><span>Food &amp; drinks</span><span>Services</span><span>Total</span><span>Received</span>
+          </div>
+          {(periods?.days || []).map((day) => (
+            <div className="pt-row" key={day.from}>
+              <strong>{day.label}</strong>
+              <span>{money(day.rooms)}</span>
+              <span>{money(day.food)}</span>
+              <span>{money(day.service + day.other)}</span>
+              <strong>{money(day.net)}</strong>
+              <strong>{money(day.payments)}</strong>
+            </div>
+          ))}
+          {[periods?.week, periods?.month].filter(Boolean).map((bucket) => (
+            <div className="pt-row pt-total" key={bucket.label}>
+              <strong>{bucket.label}</strong>
+              <span>{money(bucket.rooms)}</span>
+              <span>{money(bucket.food)}</span>
+              <span>{money(bucket.service + bucket.other)}</span>
+              <strong>{money(bucket.net)}</strong>
+              <strong>{money(bucket.payments)}</strong>
+            </div>
+          ))}
+        </div>
+      </Card>
+      </div>
+
       <div className="grid grid-main" style={{ marginBottom: 18 }}>
-        <Card title="Last 7 days" subtitle="Rooms · food & drinks · services">
+        <Card title="Last 7 days">
           <div className="columns-chart">
             {trends.map((day) => (
               <div className="col" key={day.date}>
@@ -298,7 +319,7 @@ function Reports() {
           </div>
         </Card>
 
-        <Card title={`Day close · ${daily?.date || ''}`} subtitle="What the cashier should hand over tonight">
+        <Card title={`Day close · ${daily?.date || ''}`}>
           <div className="stack">
             <div className="row" style={{ justifyContent: 'space-between' }}>
               <span className="small">Expected cash in the drawer</span>
@@ -316,10 +337,6 @@ function Reports() {
               <span className="small">Occupancy</span>
               <strong>{daily?.occupancy || 0}%</strong>
             </div>
-            <div className="banner good">
-              <Icon name="check-circle" size={15} />
-              <span>The room charge keeps counting until the room is released — so this number always matches the bills.</span>
-            </div>
           </div>
         </Card>
       </div>
@@ -331,14 +348,14 @@ function Reports() {
       </div>
 
       <div className="grid grid-2" style={{ marginBottom: 18 }}>
-        <Card title="Payments by method" subtitle="How guests are paying">
+        <Card title="Payments by method">
           {methods.length === 0 ? (
             <Empty title="No payments in this range" hint="Deposits and settlements appear here." icon="banknote" />
           ) : (
             <Bars rows={methods.map(([method, value]) => ({ label: method, value, display: money(value) }))} />
           )}
         </Card>
-        <Card title="Sales by department" subtitle="Food & drinks split per station">
+        <Card title="Sales by department">
           {Object.keys(revenue.byStation || {}).length === 0 ? (
             <Empty title="No station sales yet" hint="Delivered room-service orders land here." icon="chef-hat" />
           ) : (
@@ -356,7 +373,6 @@ function Reports() {
 
       <Card
         title="Guest history"
-        subtitle="Everyone who ever stayed — search by name or phone"
         action={
           <div className="search" style={{ width: 260 }}>
             <Icon name="search" size={14} />
@@ -433,7 +449,7 @@ function TodayAtAGlance({ snapshot, orders, requests, maintenance, onNavigate })
   return (
     <>
       <div className="grid grid-4" style={{ marginBottom: 14 }}>
-        <Card title="Today" subtitle="Arrivals & departures" noBody>
+        <Card title="Today" noBody>
           <div className="glance">
             <div>
               <span>Arrivals expected</span>
@@ -448,7 +464,7 @@ function TodayAtAGlance({ snapshot, orders, requests, maintenance, onNavigate })
           </div>
         </Card>
 
-        <Card title="Rooms" subtitle="Where every key is" noBody>
+        <Card title="Rooms" noBody>
           <div className="glance">
             <div>
               <span>Occupied</span>
@@ -463,7 +479,7 @@ function TodayAtAGlance({ snapshot, orders, requests, maintenance, onNavigate })
           </div>
         </Card>
 
-        <Card title="Restaurant & rooms service" subtitle="Live orders" noBody>
+        <Card title="Restaurant & rooms service" noBody>
           <div className="glance">
             <div>
               <span>Waiting on a station</span>
@@ -478,7 +494,7 @@ function TodayAtAGlance({ snapshot, orders, requests, maintenance, onNavigate })
           </div>
         </Card>
 
-        <Card title="Money" subtitle="Today" noBody>
+        <Card title="Money" noBody>
           <div className="glance">
             <div>
               <span>Accruing on rooms</span>

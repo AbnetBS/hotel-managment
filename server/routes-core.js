@@ -7,7 +7,7 @@ import { db, allSettings, nowIso, id, audit, ID_DIR } from './db.js';
 import { login, logout, requireAuth, requireRole, userForToken } from './auth.js';
 import * as repo from './repo.js';
 import * as actions from './actions.js';
-import { operationsSnapshot, revenueSummary, dailyClose, trends, guestHistory } from './reports.js';
+import { operationsSnapshot, revenueSummary, dailyClose, trends, guestHistory, periods } from './reports.js';
 import { ROLES, STATIONS, computeRoomCharge, folioTotals } from '../shared/billing.js';
 import { recordLoginFailure, clearLoginFailures } from './security.js';
 import { rateCard, refreshRates, dualAmount } from './fx.js';
@@ -480,6 +480,11 @@ core.get('/reports/daily', requireAuth, requireRole('manager', 'admin'), (req, r
   res.json(dailyClose({ date: req.query.date }));
 });
 
+/** Day by day (last 3), then week, then month — the owner's report buckets. */
+core.get('/reports/periods', requireAuth, requireRole('manager', 'admin'), (req, res) => {
+  res.json(periods());
+});
+
 core.get('/reports/guests', requireAuth, requireRole('manager', 'admin', 'cashier'), (req, res) => {
   res.json({ guests: guestHistory({ search: req.query.search }) });
 });
@@ -530,7 +535,7 @@ function guestRoomPayload(room) {
     bill: stay ? buildGuestBill(stay, items) : null,
     // What the guest may ask for from the room (not only food).
     requestKinds: Object.values(REQUEST_KINDS).map((kind) => ({
-      key: kind.key, label: kind.label, am: kind.am, icon: kind.icon,
+      key: kind.key, label: kind.label, icon: kind.icon,
       priced: Boolean(kind.priced), service: kind.priced || false,
     })),
     canOrder: !!stay,
@@ -563,16 +568,16 @@ function buildGuestBill(stay, items) {
   return {
     stay: { code: stay.code, room: null, mode: stay.billing_mode, rate: stay.rate, check_in_at: stay.check_in_at },
     room: {
-      title: 'Room', title_am: 'ክፍል',
+      title: 'Room', title_am: '',
       units: charge.billedUnits, unit_label: charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural,
       live: !stay.check_out_at && stay.status === 'active',
       total: totals.room,
-      line: `${charge.billedUnits} ${charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural} × ${charge.rate}`,
+      line:`${charge.billedUnits} ${charge.billedUnits === 1 ? charge.unitLabel : charge.unitLabelPlural} × ${charge.rate}`,
     },
     groups: [
-      group('food', 'Food & drinks', 'ምግብ እና መጠጥ'),
-      group('service', 'Hotel services', 'የሆቴል አገልግሎቶች'),
-      group('other', 'Other charges', 'ሌሎች ክፍያዎች'),
+      group('food', 'Food & drinks', ''),
+      group('service', 'Hotel services', ''),
+      group('other', 'Other charges', ''),
     ].filter(Boolean),
     payments: payments.map((i) => ({ id: i.id, description: i.description, amount: Math.abs(i.amount), at: i.created_at })),
     currency: allSettings().currency,
@@ -586,13 +591,13 @@ function buildGuestBill(stay, items) {
     paid: totals.paid,
     balance: totals.balance,
     // The same numbers in the guest's own currency, at the rate agreed at check-in.
-    display_currency: stay.currency || "ETB",
+    display_currency: stay.currency ||"ETB",
     display_rate: stay.currency && stay.currency !== "ETB" ? stay.fx_rate : null,
     display: (() => {
       if (!stay.currency || stay.currency === "ETB") return null;
       const convert = (value) => {
         const meta = { USD: [2, "$"], EUR: [2, "€"], GBP: [2, "£"], AED: [2, "AED"], SAR: [2, "SAR"], CNY: [2, "¥"], KES: [2, "KSh"], DJF: [0, "Fdj"], CAD: [2, "C$"], CHF: [2, "CHF"], JPY: [0, "¥"] }[stay.currency] || [2, ""];
-        return `${meta[1]} ${(Number(value) / (stay.fx_rate || 1)).toFixed(meta[0])}`;
+        return`${meta[1]} ${(Number(value) / (stay.fx_rate || 1)).toFixed(meta[0])}`;
       };
       return {
         currency: stay.currency,
@@ -657,7 +662,15 @@ core.post('/stays/:id/service', requireAuth, requireRole('cashier', 'waiter', 'm
 
 core.get('/public/hotel', (req, res) => {
   const settings = allSettings();
-  res.json({ hotel: { name: settings.hotel_name, line: settings.property_line, phone: settings.phone, currency: settings.currency } });
+  res.json({
+    hotel: {
+      name: settings.hotel_name, line: settings.property_line, phone: settings.phone, currency: settings.currency,
+      address: settings.address,
+      hero_title: settings.hero_title || '',
+      hero_tagline: settings.hero_tagline || '',
+      hero_image: settings.hero_image || '/hotel-lobby.jpg',
+    },
+  });
 });
 
 core.get('/public/room/:token', (req, res) => {

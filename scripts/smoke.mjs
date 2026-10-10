@@ -138,15 +138,18 @@ function click(window, selector, match = '') {
 async function signIn(roleLabel, username, { expected, pin = '1234' } = {}) {
   const dom = await loadApp(username);
   const { window } = dom;
-  await waitFor(window, (w) => /Which desk are you on/i.test(text(w)), { label: 'role picker' });
-  await waitFor(window, (w) => w.document.querySelectorAll('.role-card').length > 0, { label: 'role list' });
-  click(window, '.role-card', roleLabel);
-  const ready = await waitFor(window, (w) => w.document.querySelectorAll('input[type="password"]').length > 0, { label: 'PIN field' });
+  // The landing page: hotel photo, and one corner button that opens the staff roles.
+  const landed = await waitFor(window, (w) => w.document.querySelector('.landing-fab'), { label: 'landing page' });
+  if (!landed) throw new Error(`landing page never opened for ${username}`);
+  click(window, '.landing-fab');
+  await waitFor(window, (w) => w.document.querySelectorAll('.role-row').length > 0, { label: 'role list' });
+  click(window, '.role-row', roleLabel);
+  const ready = await waitFor(window, (w) => w.document.querySelectorAll('.signin-form input').length > 1, { label: 'PIN field' });
   if (!ready) throw new Error(`login form never opened for ${roleLabel}`);
-  const inputs = [...window.document.querySelectorAll('input')];
+  const inputs = [...window.document.querySelectorAll('.signin-form input')];
   setValue(window, inputs[0], username);
-  setValue(window, window.document.querySelector('input[type="password"]'), pin);
-  click(window, 'button[type="submit"]');
+  setValue(window, inputs[1], pin);
+  click(window, '.signin-form button[type="submit"]');
   await waitFor(window, (w) => (expected ? expected.test(content(w)) : content(w).length > 80), { label: `${username} dashboard`, timeout: 12000 });
   return dom;
 }
@@ -252,7 +255,7 @@ async function guestOrdersFood() {
     /See bill/i.test(doorLabels[2] || '');
   log(`   · guest landing: ${doors.length} button(s) — ${doorLabels.map((label) => label.slice(0, 22)).join(' | ')}`);
   if (!hasThree) problems.push(`[guest-qr] the guest landing is not the three agreed doors — ${doorLabels.join(' | ')}`);
-  if (!/ምናሌ|ልዩ ጥያቄ|ሂሳብ/.test(content(dom.window))) problems.push('[guest-qr] the guest landing has no Amharic labels');
+  if (/[\u1200-\u137F]/.test(content(dom.window))) problems.push('[guest-qr] the guest landing still shows Amharic — the app is English only');
 
   /* ---- door 2: a special request, e.g. Room 204 “Please bring 2 towels” ---- */
   doors[1]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -527,7 +530,7 @@ async function main() {
     ['roomtypes', /Rooms & photos/],
     ['menu', /Menu & stations/],
     ['qrcodes', /Room QR codes/],
-    ['formbuilder', /questions you ask every guest/i],
+    ['formbuilder', /Guest form/i],
     ['inventory', /Inventory/i],
     ['lostfound', /Lost & found/],
     ['currency', /Currency/i],

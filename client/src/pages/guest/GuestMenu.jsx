@@ -189,9 +189,6 @@ export default function GuestMenu({ token }) {
                   <Icon name="check" size={24} />
                 </div>
                 <h2 style={{ fontSize: 22 }}>Order #{sent.order.code} sent</h2>
-                <p className="page-desc" style={{ margin: '10px auto 0' }}>
-                  {sent.message} Total {money(sent.order.total)} — it goes on your room bill.
-                </p>
                 <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => setSent(null)}>Order something else</button>
               </div>
             ) : null}
@@ -213,7 +210,7 @@ export default function GuestMenu({ token }) {
                     <div className="emoji">{item.emoji || '🍽️'}</div>
                     <div className="info">
                       <strong>{item.name}</strong>
-                      {item.name_am ? <span style={{ color: 'var(--teal-dark)' }}>{item.name_am}</span> : null}
+                      
                       <span>{item.description}</span>
                     </div>
                     <div style={{ textAlign: 'right' }}>

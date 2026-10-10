@@ -29,9 +29,6 @@ function Staff() {
         <div>
           <div className="eyebrow">People &amp; permissions</div>
           <h1>Staff &amp; access</h1>
-          <p className="page-desc">
-            A cashier sees rooms and bills. A kitchen user only sees food tickets. Roles are enforced by the server, not just hidden in the menu.
-          </p>
         </div>
         <button className="btn btn-primary" onClick={() => setEditing({ role: 'cashier', active: true })}>
           <Icon name="user-plus" size={15} /> Add staff member
@@ -99,7 +96,6 @@ function StaffModal({ value, onClose, onDone }) {
   return (
     <Modal
       title={value.id ? `Edit ${value.name}` : 'Add staff member'}
-      subtitle="They sign in with their username and a 4-digit PIN."
       onClose={onClose}
       footer={
         <>
@@ -129,7 +125,7 @@ function StaffModal({ value, onClose, onDone }) {
         <Field label="Username" required>
           <input value={form.username || ''} onChange={(event) => set('username')(event.target.value)} autoCapitalize="none" />
         </Field>
-        <Field label="Role" required hint={ROLES[form.role]?.blurb}>
+        <Field label="Role" required>
           <select value={form.role} onChange={(event) => set('role')(event.target.value)}>
             {Object.values(ROLES).map((role) => (
               <option key={role.key} value={role.key}>{role.label}</option>
@@ -185,8 +181,7 @@ function FormBuilder() {
           id: field.id,
           key: field.key,
           label: field.label,
-          label_am: field.label_am,
-          type: field.type,
+                    type: field.type,
           required: field.required,
           options: field.type === 'select' ? (field.options?.length ? field.options : ['Option 1', 'Option 2']) : undefined,
           placeholder: field.placeholder,
@@ -207,11 +202,7 @@ function FormBuilder() {
       <div className="page-head">
         <div>
           <div className="eyebrow">Guest details</div>
-          <h1>The questions you ask every guest</h1>
-          <p className="page-desc">
-            Build the registration form once. The cashier sees it at the desk, and guests fill exactly the same form themselves after scanning
-            the QR code at reception or on the room door. Different hotels need different details — this is yours.
-          </p>
+          <h1>Guest form</h1>
         </div>
         <div className="row">
           <button className="btn" onClick={() => setFields([...fields, { key: `field_${fields.length + 1}`, label: 'New question', type: 'text', required: false }])}>
@@ -223,7 +214,7 @@ function FormBuilder() {
         </div>
       </div>
 
-      <Card title="Form fields" subtitle="Order here is the order the guest sees">
+      <Card title="Form fields">
         {fields.length === 0 ? (
           <Empty title="No questions yet" hint="Add your first question — full name and phone are a good start." icon="clipboard" />
         ) : (
@@ -234,11 +225,6 @@ function FormBuilder() {
                   <div style={{ flex: '1 1 220px' }}>
                     <Field label="Question (English)">
                       <input value={field.label} onChange={(event) => update(index, { label: event.target.value })} />
-                    </Field>
-                  </div>
-                  <div style={{ flex: '1 1 180px' }}>
-                    <Field label="Question (Amharic)">
-                      <input value={field.label_am || ''} onChange={(event) => update(index, { label_am: event.target.value })} />
                     </Field>
                   </div>
                   <div style={{ flex: '0 0 170px' }}>
@@ -302,13 +288,6 @@ function FormBuilder() {
         )}
       </Card>
 
-      <div className="banner info" style={{ marginTop: 16 }}>
-        <Icon name="qr" size={15} />
-        <span>
-          The guest QR page is public: guests fill this form themselves and the cashier gets a live notification to approve or decline it —
-          no paperwork at the desk.
-        </span>
-      </div>
     </>
   );
 }

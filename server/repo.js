@@ -289,9 +289,14 @@ export function auditLog({ limit = 120 } = {}) {
 }
 
 export function nextOrderCode() {
-  const row = db.prepare("SELECT MAX(CAST(code AS INTEGER)) AS max FROM orders WHERE code GLOB '[0-9]*'").get();
-  const base = row?.max && row.max > 1000 ? row.max : 1041;
-  return String(base + 1);
+  // Kept database-agnostic (no SQLite GLOB): order codes are plain numbers.
+  const rows = db.prepare("SELECT code FROM orders WHERE code IS NOT NULL").all();
+  let max = 0;
+  for (const row of rows) {
+    const n = Number.parseInt(row.code, 10);
+    if (Number.isFinite(n) && String(n) === String(row.code).trim() && n > max) max = n;
+  }
+  return String((max > 1000 ? max : 1041) + 1);
 }
 
 export function logEvent(orderId, actor, type, detail) {

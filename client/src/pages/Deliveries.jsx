@@ -39,10 +39,6 @@ export default function Deliveries() {
         <div>
           <div className="eyebrow">Room service · {relative(new Date(now).toISOString(), now)}</div>
           <h1>Deliveries</h1>
-          <p className="page-desc">
-            Take the cart, follow the list. Tap <strong>Delivered to the room</strong> when the guest has it — that puts the money on their bill
-            straight away, so nothing is forgotten at checkout.
-          </p>
         </div>
         <button className="btn" onClick={loadOrders}>
           <Icon name="rotate-ccw" size={14} /> Refresh

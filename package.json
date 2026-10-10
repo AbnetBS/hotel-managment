@@ -3,7 +3,7 @@
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "Clove House \u2014 hotel operations system (cashier, kitchen, barista, juice, waiter, admin) with guest QR ordering",
+  "description": "Clove House — hotel operations system (cashier, kitchen, barista, juice, waiter, admin) with guest QR ordering",
   "scripts": {
     "dev": "concurrently -n api,web -c green,cyan \"npm:server\" \"npm:web\"",
     "server": "node server/index.js",
@@ -20,11 +20,12 @@
     "test:overview": "node scripts/test-overview.mjs",
     "test:qr": "node scripts/test-qr.mjs",
     "test:health": "node scripts/test-health.mjs",
+    "test:pg": "node scripts/test-postgres.mjs",
     "verify": "node scripts/smoke.mjs && node scripts/test-flows.mjs && node scripts/test-round3.mjs && node scripts/test-security.mjs && node scripts/test-uploads-security.mjs && node scripts/test-qr.mjs && node scripts/test-health.mjs && node scripts/test-overview.mjs"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "express": "^4.21.2",
+    "pg": "^8.13.1",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -33,10 +34,11 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^5.1.0",
     "concurrently": "^9.2.1",
+    "embedded-postgres": "^18.4.0-beta.17",
     "jsdom": "^30.1.1",
     "vite": "^7.2.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   }
 }

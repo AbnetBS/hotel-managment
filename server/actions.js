@@ -496,9 +496,8 @@ export function ringForCleaning({ room, taskId, reason = 'checkout' }) {
     room: room?.number,
     room_id: room?.id,
     task_id: taskId,
-    title: `Clean Room ${room?.number} · ክፍል ${room?.number} ያጽዱ`,
-    am: 'ጽዳት ይፈልጋል',
-    reason,
+    title: `Clean Room ${room?.number}`,
+      reason,
     at: Date.now(),
   };
   publishToRoles(['housekeeping'], payload);

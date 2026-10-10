@@ -292,7 +292,8 @@ admin.delete('/registration-fields/:id', (req, res) => {
 admin.patch('/settings', (req, res) => {
   const b = req.body || {};
   const editable = ['hotel_name', 'property_line', 'property_code', 'phone', 'address', 'currency', 'vat_percent', 'service_charge_percent',
-    'checkout_hour', 'grace_hours', 'wifi_name', 'wifi_password', 'receipt_footer', 'dayuse_default_hours', 'alert_sound', 'require_call_confirmation'];
+    'checkout_hour', 'grace_hours', 'wifi_name', 'wifi_password', 'receipt_footer', 'receipt_tin', 'dayuse_default_hours', 'alert_sound',
+    'require_call_confirmation', 'hero_title', 'hero_tagline', 'hero_image'];
   for (const key of editable) {
     if (b[key] !== undefined) setSetting(key, b[key]);
   }

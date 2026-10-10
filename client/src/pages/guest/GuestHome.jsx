@@ -10,22 +10,16 @@ export default function GuestHome({ hotel, room, canOrder, openRequests, onOpen 
       key: 'menu',
       icon: 'utensils',
       title: 'Menu watch and order',
-      am: 'ምናሌ ይመልከቱ እና ያዙ',
-      text: 'See the full menu and send food or drinks to your room.',
     },
     {
       key: 'request',
       icon: 'bell',
       title: 'Special request',
-      am: 'ልዩ ጥያቄ',
-      text: 'Towels, water, laundry, taxi, something broken — one tap.',
     },
     {
       key: 'bill',
       icon: 'receipt',
       title: 'See bill',
-      am: 'ሂሳብ ይመልከቱ',
-      text: 'Everything charged to the room, and what is left to pay.',
     },
   ];
 
@@ -38,8 +32,6 @@ export default function GuestHome({ hotel, room, canOrder, openRequests, onOpen 
               <span className={`guest-door-icon ${door.key}`}><Icon name={door.icon} size={26} /></span>
               <span className="guest-door-copy">
                 <strong>{door.title}</strong>
-                <em>{door.am}</em>
-                <span>{door.text}</span>
               </span>
               <Icon name="chevron-right" size={18} />
             </button>

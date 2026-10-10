@@ -205,7 +205,6 @@ export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', onClo
   return (
     <Modal
       title="New order"
-      subtitle="A guest phoned the desk, or a walk-in is ordering at the till — same menu, same stations."
       onClose={onClose}
       size="xwide"
       footer={
@@ -253,11 +252,8 @@ export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', onClo
       <MenuPicker value={lines} onChange={setLines} />
 
       <div className="banner info" style={{ marginTop: 14 }}>
-        <Icon name="clock" size={15} />
-        <span>
-          Then: <strong>accept</strong> the order, <strong>call the guest to confirm</strong>, and <strong>send it to the stations</strong> —
-          kitchen, barista and juice only see their own items. {money(total)} so far.
-        </span>
+        <Icon name="receipt" size={15} />
+        <span>{money(total)}</span>
       </div>
     </Modal>
   );

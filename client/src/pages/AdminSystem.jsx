@@ -28,10 +28,6 @@ function QrCodes() {
         <div>
           <div className="eyebrow">Print &amp; stick</div>
           <h1>Room QR codes</h1>
-          <p className="page-desc">
-            Two codes per room. The <strong>menu code</strong> goes in the room — the guest scans it and orders food to the room. The{' '}
-            <strong>registration code</strong> goes at reception or on the door: the guest fills their details, and the desk approves them.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => window.print()}>
@@ -40,7 +36,7 @@ function QrCodes() {
         </div>
       </div>
 
-      <Card title="Which code is on the sheet?" subtitle="Print one kind at a time, or both" className="no-print">
+      <Card title="Which code is on the sheet?" className="no-print">
         <div className="row" style={{ gap: 12 }}>
           <div className="seg">
             <button className={kind === 'q' ? 'on' : ''} onClick={() => setKind('q')}>Order food (in the room)</button>
@@ -83,13 +79,6 @@ function QrCodes() {
         ))}
       </div>
 
-      <div className="banner warn no-print" style={{ marginTop: 18 }}>
-        <Icon name="alert" size={15} />
-        <span>
-          If a guest shares the code or a room changes use, regenerate the code from <strong>Rooms &amp; photos → Room list</strong> and print the
-          sheet again.
-        </span>
-      </div>
     </>
   );
 }
@@ -110,7 +99,6 @@ function SettingsPanel() {
         <div>
           <div className="eyebrow">Hotel setup</div>
           <h1>Hotel settings</h1>
-          <p className="page-desc">Receipts, taxes, checkout time and the small rules that keep the desk consistent.</p>
         </div>
         <button
           className="btn btn-primary"
@@ -133,7 +121,7 @@ function SettingsPanel() {
       </div>
 
       <div className="grid grid-main">
-        <Card title="The hotel" subtitle="Shown on receipts and on the guest pages">
+        <Card title="The hotel">
           <div className="form-grid">
             <Field label="Hotel name">
               <input value={form.hotel_name || ''} onChange={(event) => set('hotel_name')(event.target.value)} />
@@ -150,20 +138,31 @@ function SettingsPanel() {
             <Field label="Address" full>
               <textarea value={form.address || ''} onChange={(event) => set('address')(event.target.value)} />
             </Field>
-            <Field label="Receipt footer" full>
+            <Field label="Receipt TIN">
+              <input value={form.receipt_tin || ''} onChange={(event) => set('receipt_tin')(event.target.value)} />
+            </Field>
+            <Field label="Receipt footer">
               <input value={form.receipt_footer || ''} onChange={(event) => set('receipt_footer')(event.target.value)} />
             </Field>
           </div>
         </Card>
 
-        <Card title="Money &amp; timing" subtitle="How the bills and the day work">
+        <Card title="Website">
           <div className="form-grid">
-            <Field label="VAT %">
-              <input type="number" value={form.vat_percent ?? ''} onChange={(event) => set('vat_percent')(event.target.value)} />
+            <Field label="Hero title" full>
+              <input value={form.hero_title || ''} onChange={(event) => set('hero_title')(event.target.value)} />
             </Field>
-            <Field label="Service charge %">
-              <input type="number" value={form.service_charge_percent ?? ''} onChange={(event) => set('service_charge_percent')(event.target.value)} />
+            <Field label="Hero tagline" full>
+              <input value={form.hero_tagline || ''} onChange={(event) => set('hero_tagline')(event.target.value)} />
             </Field>
+            <Field label="Hero image" full>
+              <input value={form.hero_image || ''} onChange={(event) => set('hero_image')(event.target.value)} placeholder="/hotel-lobby.jpg" />
+            </Field>
+          </div>
+        </Card>
+
+        <Card title="Money &amp; timing">
+          <div className="form-grid">
             <Field label="Checkout time (hour)">
               <input type="number" value={form.checkout_hour ?? 12} onChange={(event) => set('checkout_hour')(event.target.value)} />
             </Field>
@@ -232,7 +231,6 @@ function AuditLog() {
         <div>
           <div className="eyebrow">Nothing disappears</div>
           <h1>Audit log</h1>
-          <p className="page-desc">Every check-in, payment, price change and staff change is written down with who did it and when.</p>
         </div>
       </div>
 

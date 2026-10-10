@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+server/data
+server/uploads
+server/id-docs
+legacy
+scripts
+*.log
+.env
+.DS_Store

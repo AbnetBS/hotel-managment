@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { fileURLToPath } from 'node:url';
-import { DB_PATH, UPLOAD_DIR, db } from './db.js';
+import { DB_PATH, UPLOAD_DIR, DB_DRIVER, db } from './db.js';
 import { ensureSeed } from './seed.js';
 import { attachRealtime, onlineCount } from './realtime.js';
 import { compress, serveAssets, cacheHeaders, securityHeaders, rateLimit, loginGuard, errorHandler, apiNotFound } from './security.js';
@@ -53,7 +53,13 @@ function buildId() {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, online: onlineCount(), db: path.basename(DB_PATH), version: buildId(), time: new Date().toISOString() });
+  res.json({
+    ok: true,
+    online: onlineCount(),
+    db: DB_DRIVER === 'pg' ? 'postgresql' : path.basename(DB_PATH),
+    version: buildId(),
+    time: new Date().toISOString(),
+  });
 });
 
 // Identity scans never belong under the public /uploads mount. This guard is
@@ -114,7 +120,7 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  Clove House hotel system`);
   console.log(`  ─────────────────────────`);
   console.log(`  API + app      http://localhost:${PORT}`);
-  console.log(`  Database       ${DB_PATH}`);
+  console.log(`  Database       ${DB_DRIVER === 'pg' ? 'PostgreSQL (DATABASE_URL)' : DB_PATH}`);
   console.log(`  Demo logins    admin / manager / cashier / waiter / kitchen / pastry / barista / juice / housekeeping  ·  PIN 1234`);
   if (created) console.log(`  ✓ First run: demo hotel created`);
   console.log('');

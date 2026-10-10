@@ -38,12 +38,8 @@ export default function Tasks({ mode }) {
       <>
         <div className="page-head">
           <div>
-            <div className="eyebrow">Rooms to turn around · የጽዳት ሥራ</div>
+            <div className="eyebrow">Housekeeping</div>
             <h1>Housekeeping</h1>
-            <p className="page-desc">
-              Rooms waiting for you are <strong>purple</strong>. Tap <strong>Start cleaning</strong> when you go in (the room turns blue), then
-              <strong> Cleaned · ንጹህ ሆነ</strong> when you finish — the room turns green for the next guest.
-            </p>
           </div>
           <button className="btn" onClick={() => { loadHousekeeping(); loadRooms(); }}>
             <Icon name="rotate-ccw" size={14} /> Refresh
@@ -76,7 +72,7 @@ export default function Tasks({ mode }) {
                       try {
                         const result = await api.post(`/housekeeping/${task.id}/advance`);
                         toast(result.status === 'completed'
-                          ? `Room ${result.room || room?.number} is clean · ክፍሉ ተጠናቋል`
+                          ? `Room ${result.room || room?.number} is clean`
                           : `Room ${result.room || room?.number} · cleaning started`);
                         loadHousekeeping();
                         loadRooms();
@@ -86,19 +82,19 @@ export default function Tasks({ mode }) {
                     }}
                   >
                     <Icon name={started ? 'check' : 'play'} size={18} />
-                    {started ? 'Cleaned · ንጹህ ሆነ' : 'Start cleaning · ጀምር'}
+                    {started ? 'Cleaned' : 'Start cleaning'}
                   </button>
                 </div>
               );
             })}
           </div>
         ) : (
-          <Card title="Cleaning tasks" subtitle="Nothing to do right now" noBody>
+          <Card title="Cleaning tasks" noBody>
             <Empty title="All rooms are clean" hint="A card appears here the moment a guest checks out and pays." icon="sparkles" />
           </Card>
         )}
 
-        <Card title="Finished today" subtitle="Kept for the supervisor" noBody>
+        <Card title="Finished today" noBody>
           {housekeeping.filter((task) => task.status === 'completed').length === 0 ? (
             <Empty title="Nothing finished yet" hint="Completed rooms appear here with the time." icon="check-circle" />
           ) : (
@@ -132,12 +128,8 @@ export default function Tasks({ mode }) {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Broken things, fixed fast</div>
+          <div className="eyebrow">Maintenance</div>
           <h1>Maintenance</h1>
-          <p className="page-desc">
-            A high-priority problem blocks the room so the desk cannot sell it. Walk the ticket up the ladder —
-            <strong> assign → start → fixed → sign off</strong>. A signed-off repair sends the room for cleaning before it is sold again.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => setFilter(filter === 'open' ? 'all' : 'open')}>
@@ -155,7 +147,7 @@ export default function Tasks({ mode }) {
         <Stat label="Resolved" value={maintenance.filter((issue) => issue.status === 'resolved').length} icon="check-circle" foot="In the log" />
       </div>
 
-      <Card title="Issue log" subtitle="Newest first" noBody>
+      <Card title="Issue log" noBody>
         {issues.length === 0 ? (
           <Empty title="Nothing broken" hint="Report a problem and it lands here with the room blocked." icon="wrench" />
         ) : (
@@ -254,7 +246,7 @@ export default function Tasks({ mode }) {
               <Stat label="All-time repair cost" value={`${history.cost || 0}`} icon="banknote" foot="Birr spent on this room" />
               <Stat label="Most common" value={history.top_category || '—'} icon="alert" foot="Category that keeps coming back" />
             </div>
-            <Card title="Every ticket" subtitle="Newest first" noBody>
+            <Card title="Every ticket" noBody>
               <table>
                 <thead>
                   <tr><th>Issue</th><th>Category</th><th>Reported</th><th>Status</th><th>Cost</th></tr>
@@ -352,7 +344,6 @@ function NewIssueModal({ rooms, onClose, onDone }) {
   return (
     <Modal
       title="Report a problem"
-      subtitle="A high-priority issue blocks the room automatically."
       onClose={onClose}
       footer={
         <>

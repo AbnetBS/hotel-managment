@@ -6,6 +6,7 @@ import { money, formatElapsed, formatCountdown, initials, dateTimeOf, toLocalInp
 import { Icon } from '../lib/icons.jsx';
 import { Modal, Drawer, Field, Pill, Empty, Stat } from '../lib/ui.jsx';
 import { NewOrderModal } from '../components/OrderPieces.jsx';
+import { ReceiptModal } from '../components/Receipt.jsx';
 
 const TILE = {
   available: 'free',
@@ -95,12 +96,6 @@ export default function Rooms() {
         <div>
           <div className="eyebrow">Front desk · {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
           <h1>Room board</h1>
-          <p className="page-desc">
-            <span style={{ color: 'var(--green)', fontWeight: 700 }}>Green</span> is free — tap it to show the room to a guest.{' '}
-            <span style={{ color: 'var(--red)', fontWeight: 700 }}>Red</span> is occupied — the bill counts by itself.{' '}
-            <span style={{ color: 'var(--purple)', fontWeight: 700 }}>Purple</span> needs cleaning — housekeeping has been told.{' '}
-            <span style={{ color: 'var(--blue)', fontWeight: 700 }}>Blue</span> is being cleaned.
-          </p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => setShowOrder(true)}>
@@ -248,7 +243,7 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
   const { toast, requests, loadRooms, loadRequests, settings, user } = useApp();
   const [detail, setDetail] = useState(null);
   const [photo, setPhoto] = useState(0);
-  const [modal, setModal] = useState(null); // 'payment' | 'charge' | 'checkout' | 'extend'
+  const [modal, setModal] = useState(null); // 'payment' | 'charge' | 'checkout' | 'extend' | 'receipt'
   const now = useNow(1000);
 
   const room = detail?.room || roomSummary;
@@ -412,6 +407,9 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
             <button className="btn" onClick={() => setModal('extend')}>
               <Icon name="calendar" size={14} /> Extend stay
             </button>
+            <button className="btn" onClick={() => setModal('receipt')}>
+              <Icon name="print" size={14} /> Print receipt
+            </button>
             <button className="btn btn-dark" onClick={() => setModal('checkout')}>
               <Icon name="log-out" size={14} /> Paid &amp; release room
             </button>
@@ -463,7 +461,6 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
               <div className="card-head">
                 <div>
                   <h3>Orders for this room</h3>
-                  <div className="sub">Everything the guest ordered, with its exact stage</div>
                 </div>
               </div>
               <div className="card-body" style={{ paddingTop: 4 }}>
@@ -485,13 +482,6 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
         </>
       ) : (
         <>
-          <div className="banner good">
-            <Icon name="check-circle" size={16} />
-            <span>
-              <strong>Room {room.number} is free and ready.</strong> Show the guest the photos and price above, then check them in — the room
-              turns red and the {BILLING_MODES[room.billing_mode]?.label.toLowerCase() || 'nightly'} counter starts.
-            </span>
-          </div>
           <div className="row">
             <button className="btn btn-primary btn-lg" onClick={onCheckIn}>
               <Icon name="user-plus" size={16} /> Check this guest in
@@ -507,7 +497,6 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
         <div className="card-head">
           <div>
             <h3>Room status for housekeeping</h3>
-            <div className="sub">Only a paid &amp; released room can be cleared for the next guest.</div>
           </div>
         </div>
         <div className="card-body">
@@ -539,10 +528,9 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
                 }
               }}
             >
-              <Icon name="sparkles" size={15} /> Cleaned · ንጹህ ሆነ
+              <Icon name="sparkles" size={15} /> Cleaned
             </button>
           ) : null}
-          {stay ? <div className="tiny muted" style={{ marginTop: 10 }}>Release the room first — “Paid &amp; release room” — before clearing it.</div> : null}
         </div>
       </div>
 
@@ -558,6 +546,7 @@ function RoomDrawer({ room: roomSummary, onClose, onCheckIn, onNewOrder }) {
       ) : null}
       {modal === 'charge' ? <ChargeModal stayId={folio.id} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); loadRooms(); }} /> : null}
       {modal === 'extend' ? <ExtendModal folio={folio} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} /> : null}
+      {modal === 'receipt' ? <ReceiptModal folio={folio} room={room} onClose={() => setModal(null)} /> : null}
       {modal === 'checkout' ? (
         <CheckoutModal
           folio={folio}
@@ -581,11 +570,11 @@ function BillPanel({ folio, totals }) {
   const live = folio ? computeRoomCharge(folio || {}, new Date()) : null;
 
   const groups = [
-    { key: 'room', label: 'Room', am: 'ክፍል', items: of(['room']) },
-    { key: 'food', label: 'Food & drinks', am: 'ምግብ እና መጠጥ', items: of(['food']) },
-    { key: 'service', label: 'Hotel services', am: 'አገልግሎቶች', items: of(['service', 'other']) },
-    { key: 'discount', label: 'Discounts', am: 'ቅናሽ', items: of(['discount']) },
-    { key: 'payment', label: 'Payments received', am: 'የተከፈለ', items: of(['payment']) },
+    { key: 'room', label: 'Room', items: of(['room']) },
+    { key: 'food', label: 'Food & drinks', items: of(['food']) },
+    { key: 'service', label: 'Hotel services', items: of(['service', 'other']) },
+    { key: 'discount', label: 'Discounts', items: of(['discount']) },
+    { key: 'payment', label: 'Payments received', items: of(['payment']) },
   ].map((group) => ({ ...group, total: sum(group.items) }));
 
   return (
@@ -622,7 +611,7 @@ function BillPanel({ folio, totals }) {
       {groups.map((group) => (
         <div key={group.key}>
           <div className="bill-group-head">
-            <span>{group.label} <em>{group.am}</em></span>
+            <span>{group.label}</span>
             <strong>{money(group.total)}</strong>
           </div>
           {group.key === 'room' && group.items.length === 0 ? (
@@ -771,12 +760,6 @@ function CheckInModal({ roomId, onClose, onDone }) {
         </>
       }
     >
-      <div className="banner info" style={{ marginBottom: 16 }}>
-        <Icon name="clipboard" size={15} />
-        <span>
-          These are the questions your hotel asks every guest — the admin decides which ones appear, in <strong>Guest form</strong>.
-        </span>
-      </div>
 
       <div className="form-grid">
         {fields.map((field) => (
@@ -943,7 +926,6 @@ export function PaymentModal({ stayId, currency = 'ETB', fxRate = 1, balance = 0
   return (
     <Modal
       title="Take a payment"
-      subtitle="The amount is taken off the guest bill straight away."
       onClose={onClose}
       footer={
         <>
@@ -1021,7 +1003,6 @@ function ChargeModal({ stayId, onClose, onDone }) {
     return (
       <Modal
         title="Post a service to the room"
-        subtitle="Tap what the guest used — it goes on the bill and to the right station."
         onClose={onClose}
         size="wide"
         footer={<button className="btn" onClick={onClose}>Close</button>}
@@ -1031,7 +1012,6 @@ function ChargeModal({ stayId, onClose, onDone }) {
             <button key={service.id} type="button" className="request-tile" disabled={busy} onClick={() => send({ serviceId: service.id, qty: 1 })}>
               <Icon name={service.kind === 'other' ? 'box' : 'sparkles'} size={18} />
               <strong>{service.name}</strong>
-              <span>{service.name_am || ''}</span>
               <span>{service.price ? money(service.price) : 'no charge'}</span>
             </button>
           ))}
@@ -1046,7 +1026,6 @@ function ChargeModal({ stayId, onClose, onDone }) {
   return (
     <Modal
       title="Add a charge to the bill"
-      subtitle="Anything outside the service list — a broken lamp, a late checkout, a special price."
       onClose={onClose}
       footer={
         <>
@@ -1100,7 +1079,6 @@ function ExtendModal({ folio, onClose, onDone }) {
   return (
     <Modal
       title="Extend the stay"
-      subtitle="Change the planned checkout time or agree a new rate."
       onClose={onClose}
       footer={
         <>
@@ -1147,6 +1125,7 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
   const [approval, setApproval] = useState(null); // set when the server asks for a manager
   const [approvedBy, setApprovedBy] = useState('');
   const [approvalId, setApprovalId] = useState('');
+  const [doneFolio, setDoneFolio] = useState(null); // checkout finished — show the receipt
   const now = useNow(1000);
 
   const currency = folio?.currency || 'ETB';
@@ -1154,6 +1133,17 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
   const rate = Number(folio?.fx_rate) || 1;
   // The guest agreed a currency at check-in: quote the bill in it.
   const guest = (value) => (foreign ? `${(Number(value) / rate).toFixed(2)} ${currency}` : money(value));
+
+  if (doneFolio) {
+    return (
+      <ReceiptModal
+        folio={doneFolio}
+        room={{ number: doneFolio.room_number || folio?.room_number }}
+        title="Receipt"
+        onClose={onDone}
+      />
+    );
+  }
 
   const charge = computeRoomCharge({ ...folio, units_override: units }, now);
   const otherCharges = (totals?.food || 0) + (totals?.service || 0) + (totals?.other || 0);
@@ -1194,7 +1184,8 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
       );
       await loadRooms();
       await loadStays();
-      onDone?.();
+      if (result.folio) setDoneFolio(result.folio);
+      else onDone?.();
     } catch (error) {
       if (error.status === 403 && error.payload?.needs_approval) {
         // The hotel's rule, enforced by the server: ask a manager to approve.
@@ -1320,7 +1311,7 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
           {foreign ? (
             <div className="banner info" style={{ marginTop: 12 }}>
               <Icon name="exchange" size={14} />
-              <span>Guest pays in <strong>{currency}</strong> at {rate} birr — tick “in {currency}” on a payment to take it in dollars.</span>
+              <span><strong>{currency}</strong> @ {rate}</span>
             </div>
           ) : null}
 
@@ -1367,7 +1358,6 @@ export function CheckoutModal({ folio, totals, onClose, onDone }) {
             <input type="checkbox" checked={release} onChange={(event) => setRelease(event.target.checked)} style={{ width: 18, height: 18 }} />
             <span className="small">
               Release the room now
-              <span className="tiny muted" style={{ display: 'block' }}>Marks it “needs cleaning” and sends housekeeping a turnover task.</span>
             </span>
           </label>
 
@@ -1417,7 +1407,7 @@ function PendingRegistrations({ requests, rooms, onDone }) {
             Check the name and phone against the ID, then approve — that checks the guest in and starts the bill.
           </div>
         </div>
-        <Pill status="new">ደረሰኝ · new</Pill>
+        <Pill status="new">New</Pill>
       </div>
       {requests.map((request) => {
         const room = rooms.find((item) => item.id === request.room_id);
@@ -1491,13 +1481,13 @@ function CleaningQueue({ rooms, onDone }) {
     <div className="card clean-queue" style={{ marginBottom: 18 }}>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div>
-          <div className="eyebrow">Housekeeping · ጽዳት</div>
+          <div className="eyebrow">Housekeeping</div>
           <strong>{rooms.length} room{rooms.length > 1 ? 's' : ''} waiting to be cleaned</strong>
           <div className="muted" style={{ fontSize: 12 }}>
             Tell the housekeeper the room number, then tap <strong>Cleaned</strong> here when she is done — the room goes green again.
           </div>
         </div>
-        <Pill status="pending">ማጽዳት ይፈልጋል</Pill>
+        <Pill status="pending">Needs cleaning</Pill>
       </div>
       <div className="clean-row">
         {rooms.map((room) => (

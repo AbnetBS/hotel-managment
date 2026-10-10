@@ -23,7 +23,6 @@ export function Stat({ label, value, unit, foot, icon, alert }) {
         {value}
         {unit ? <small> {unit}</small> : null}
       </div>
-      {foot ? <div className="foot">{foot}</div> : null}
     </div>
   );
 }
@@ -108,7 +107,6 @@ export function Field({ label, hint, required, children, full }) {
         {label} {required ? <span className="req">*</span> : null}
       </label>
       {children}
-      {hint ? <div className="help">{hint}</div> : null}
     </div>
   );
 }
@@ -143,7 +141,6 @@ export function Empty({ title, hint, icon = 'grid', action }) {
     <div className="empty">
       <div style={{ marginBottom: 10, color: 'var(--ink-faint)' }}><Icon name={icon} size={26} /></div>
       <strong>{title}</strong>
-      {hint ? <div className="small">{hint}</div> : null}
       {action ? <div style={{ marginTop: 14 }}>{action}</div> : null}
     </div>
   );

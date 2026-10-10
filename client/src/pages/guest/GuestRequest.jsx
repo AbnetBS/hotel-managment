@@ -40,14 +40,6 @@ export default function GuestRequest({ token, room, kinds, onBack, onDone }) {
           <Icon name="check" size={26} />
         </div>
         <h2 style={{ fontSize: 24 }}>We are on it</h2>
-        <p className="page-desc" style={{ margin: '12px auto 0' }}>
-          <strong>{sent.kind.label}{sent.kind.am ? ` · ${sent.kind.am}` : ''}</strong> sent for Room {room?.number}.
-          {sent.kind.department === 'housekeeping' ? ' Housekeeping has been told.' : null}
-          {sent.kind.department === 'maintenance' ? ' Maintenance has a ticket for it.' : null}
-          {sent.kind.department === 'waiter' ? ' The service team has been told.' : null}
-          {sent.kind.department === 'desk' ? ' The reception desk has been told.' : null}
-          {sent.kind.priced ? ' It is charged to your room bill when it is done.' : ''}
-        </p>
         <div className="row" style={{ justifyContent: 'center', marginTop: 18 }}>
           <button className="btn btn-ghost" onClick={() => setSent(null)}>Ask for something else</button>
           <button className="btn btn-primary" onClick={onBack}>Back to start</button>
@@ -58,15 +50,12 @@ export default function GuestRequest({ token, room, kinds, onBack, onDone }) {
 
   return (
     <div className="stack">
-      <button className="btn btn-ghost btn-sm" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
+      <button className="btn btn-ghost btn-sm" onClick={onBack} style={{ alignSelf: 'flex-start'}}>
         <Icon name="arrow-left" size={15} /> Back
       </button>
 
       <div className="card card-pad">
-        <h2>Special request · ልዩ ጥያቄ</h2>
-        <p className="small muted" style={{ marginTop: 6 }}>
-          Tap what you need — Room {room?.number}. Someone is told immediately; you do not have to call the desk.
-        </p>
+        <h2>Special request</h2>
 
         <div className="request-grid">
           {list.map((kind) => (
@@ -78,7 +67,7 @@ export default function GuestRequest({ token, room, kinds, onBack, onDone }) {
             >
               <Icon name={kind.icon || 'bell'} size={20} />
               <strong>{kind.label}</strong>
-              <span>{kind.am}</span>
+              
             </button>
           ))}
         </div>
@@ -86,17 +75,17 @@ export default function GuestRequest({ token, room, kinds, onBack, onDone }) {
         <button
           type="button"
           className={`request-tile wide ${chosen?.key === 'other' ? 'on' : ''}`}
-          onClick={() => setChosen({ key: 'other', label: 'Something else', am: 'ሌላ', priced: true, department: 'desk' })}
+          onClick={() => setChosen({ key: 'other', label: 'Something else', priced: true, department: 'desk' })}
           style={{ marginTop: 10 }}
         >
           <Icon name="message" size={18} />
-          <strong>Something else · ሌላ</strong>
+          <strong>Something else</strong>
         </button>
       </div>
 
       <div className="card card-pad">
         <label className="field">
-          <span>Tell us more (optional) · ተጨማሪ</span>
+          <span>Tell us more</span>
           <textarea
             rows={3}
             value={note}
@@ -114,7 +103,7 @@ export default function GuestRequest({ token, room, kinds, onBack, onDone }) {
 
         {error ? <div className="banner warn" style={{ marginTop: 10 }}><Icon name="alert" size={14} /> <span>{error}</span></div> : null}
 
-        <button className="btn btn-primary btn-lg" style={{ marginTop: 12, width: '100%' }} disabled={busy || !chosen} onClick={send}>
+        <button className="btn btn-primary btn-lg" style={{ marginTop: 12, width:'100%' }} disabled={busy || !chosen} onClick={send}>
           <Icon name="send" size={16} /> {busy ? 'Sending…' : 'Send request'}
         </button>
       </div>

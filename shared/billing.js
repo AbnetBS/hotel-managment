@@ -9,9 +9,9 @@ export const HOUR = 3600 * 1000;
 export const DAY = 24 * HOUR;
 
 export const BILLING_MODES = {
-  nightly: { key: 'nightly', label: 'Per night', am: 'በሌሊት', unit: 'night', unitPlural: 'nights' },
-  dayuse: { key: 'dayuse', label: 'Day use (block of hours)', am: 'የቀን ኪራይ', unit: 'day-use block', unitPlural: 'day-use blocks' },
-  hourly: { key: 'hourly', label: 'Per hour', am: 'በሰዓት', unit: 'hour', unitPlural: 'hours' },
+  nightly: { key: 'nightly', label: 'Per night', unit: 'night', unitPlural: 'nights' },
+  dayuse: { key: 'dayuse', label: 'Day use (block of hours)', unit: 'day-use block', unitPlural: 'day-use blocks' },
+  hourly: { key: 'hourly', label: 'Per hour', unit: 'hour', unitPlural: 'hours' },
 };
 
 /**
@@ -129,22 +129,22 @@ export function formatCountdown(ms) {
 export const ORDER_FLOW = ['new', 'accepted', 'sent', 'ready', 'delivering', 'delivered', 'completed'];
 
 export const ORDER_STATUS = {
-  new: { label: 'New order', am: 'አዲስ ትዕዛዝ', tone: 'coral' },
-  accepted: { label: 'Accepted', am: 'ተቀብሏል', tone: 'amber' },
-  sent: { label: 'In the station', am: 'ወደ ጣቢያ ተልኳል', tone: 'blue' },
-  ready: { label: 'Ready · send waiter', am: 'ተዘጋጅቷል', tone: 'teal' },
-  delivering: { label: 'On the way', am: 'በመንገድ ላይ', tone: 'purple' },
-  delivered: { label: 'Delivered', am: 'ተደርሷል', tone: 'teal' },
-  completed: { label: 'Completed', am: 'ተጠናቋል', tone: 'gray' },
-  cancelled: { label: 'Cancelled', am: 'ተሰርዟል', tone: 'gray' },
+  new: { label: 'New order', tone: 'coral' },
+  accepted: { label: 'Accepted', tone: 'amber' },
+  sent: { label: 'In the station', tone: 'blue' },
+  ready: { label: 'Ready · send waiter', tone: 'teal' },
+  delivering: { label: 'On the way', tone: 'purple' },
+  delivered: { label: 'Delivered', tone: 'teal' },
+  completed: { label: 'Completed', tone: 'gray' },
+  cancelled: { label: 'Cancelled', tone: 'gray' },
 };
 
 export const STATIONS = {
-  kitchen: { key: 'kitchen', label: 'Kitchen', am: 'ወጥ ቤት', icon: 'chef-hat' },
-  pastry: { key: 'pastry', label: 'Pastry & cake', am: 'ጣፋጭ እና ኬክ', icon: 'cake' },
-  barista: { key: 'barista', label: 'Barista · bar', am: 'ባሪስታ', icon: 'coffee' },
-  juice: { key: 'juice', label: 'Juice station', am: 'ጁስ ጣቢያ', icon: 'cup' },
-  bar: { key: 'bar', label: 'Bar', am: 'ባር', icon: 'glass' },
+  kitchen: { key: 'kitchen', label: 'Kitchen', icon: 'chef-hat' },
+  pastry: { key: 'pastry', label: 'Pastry & cake', icon: 'cake' },
+  barista: { key: 'barista', label: 'Barista · bar', icon: 'coffee' },
+  juice: { key: 'juice', label: 'Juice station', icon: 'cup' },
+  bar: { key: 'bar', label: 'Bar', icon: 'glass' },
 };
 
 export const STATION_ORDER = ['kitchen', 'pastry', 'barista', 'juice', 'bar'];
@@ -156,14 +156,14 @@ export const STATION_ORDER = ['kitchen', 'pastry', 'barista', 'juice', 'bar'];
  *   → (cleaner done) → inspected (optional, supervisor) → available.
  */
 export const ROOM_STATUS = {
-  available: { key: 'available', label: 'Vacant clean', am: 'ነጻ · ንጹህ', tone: 'free', note: 'Ready for the next guest' },
-  dirty: { key: 'dirty', label: 'Needs cleaning', am: 'ማጽዳት ይፈልጋል', tone: 'clean', note: 'Guest left — housekeeping must clean it' },
-  cleaning: { key: 'cleaning', label: 'Being cleaned', am: 'በመጽዳት ላይ', tone: 'working', note: 'Housekeeping is inside right now' },
-  inspected: { key: 'inspected', label: 'Inspected', am: 'ተመርምሯል', tone: 'inspected', note: 'Checked by a supervisor — sellable' },
-  occupied: { key: 'occupied', label: 'Occupied', am: 'ተይዟል', tone: 'busy', note: 'A guest is in the room' },
-  reserved: { key: 'reserved', label: 'Reserved', am: 'ተያዝኗል', tone: 'reserved', note: 'Held for a booking' },
-  maintenance: { key: 'maintenance', label: 'Maintenance', am: 'ጥገና', tone: 'blocked', note: 'Blocked — something is broken' },
-  out_of_order: { key: 'out_of_order', label: 'Out of order', am: 'ከአገልግሎት ውጪ', tone: 'blocked', note: 'Not sellable at all' },
+  available: { key: 'available', label: 'Vacant clean', tone: 'free', note: 'Ready for the next guest' },
+  dirty: { key: 'dirty', label: 'Needs cleaning', tone: 'clean', note: 'Guest left — housekeeping must clean it' },
+  cleaning: { key: 'cleaning', label: 'Being cleaned', tone: 'working', note: 'Housekeeping is inside right now' },
+  inspected: { key: 'inspected', label: 'Inspected', tone: 'inspected', note: 'Checked by a supervisor — sellable' },
+  occupied: { key: 'occupied', label: 'Occupied', tone: 'busy', note: 'A guest is in the room' },
+  reserved: { key: 'reserved', label: 'Reserved', tone: 'reserved', note: 'Held for a booking' },
+  maintenance: { key: 'maintenance', label: 'Maintenance', tone: 'blocked', note: 'Blocked — something is broken' },
+  out_of_order: { key: 'out_of_order', label: 'Out of order', tone: 'blocked', note: 'Not sellable at all' },
 };
 
 /** Rooms a guest can be checked into right now. */
@@ -176,16 +176,16 @@ export const needsCleaning = (status) => CLEANING_STATUSES.includes(status);
 export const statusLabel = (status) => ROOM_STATUS[status]?.label || String(status || '').replace(/_/g, ' ');
 
 export const ROLES = {
-  admin: { key: 'admin', label: 'Owner / Admin', am: 'ባለቤት / አድሚን', home: 'overview', blurb: 'Full control: rooms, prices, staff, menu and reports.' },
-  manager: { key: 'manager', label: 'Manager', am: 'ማናጀር', home: 'overview', blurb: 'KPI dashboard, reports, housekeeping and maintenance.' },
-  cashier: { key: 'cashier', label: 'Cashier / Front desk', am: 'ካሸር', home: 'rooms', blurb: 'Rooms, check-in, orders, bills and payments.' },
-  waiter: { key: 'waiter', label: 'Waiter', am: 'ወይተር', home: 'deliveries', blurb: 'Deliver ready orders to rooms, confirm delivery.' },
-  kitchen: { key: 'kitchen', label: 'Kitchen', am: 'ወጥ ቤት', home: 'station', blurb: 'Accept and finish food tickets.' },
-  pastry: { key: 'pastry', label: 'Pastry & cake', am: 'ጣፋጭ እና ኬክ', home: 'station', blurb: 'Cakes, pastry and desserts — accept and finish tickets.' },
-  barista: { key: 'barista', label: 'Barista', am: 'ባሪስታ', home: 'station', blurb: 'Coffee and bar tickets.' },
-  juice: { key: 'juice', label: 'Juice station', am: 'ጁስ ጣቢያ', home: 'station', blurb: 'Juice and soft drink tickets.' },
-  housekeeping: { key: 'housekeeping', label: 'Housekeeping', am: 'ጽዳት ክፍል', home: 'housekeeping', blurb: 'Clean and release rooms after checkout.' },
-  maintenance: { key: 'maintenance', label: 'Maintenance', am: 'ጥገና', home: 'maintenance', blurb: 'Fix reported room issues.' },
+  admin: { key: 'admin', label: 'Owner / Admin', home: 'overview', },
+  manager: { key: 'manager', label: 'Manager', home: 'overview', },
+  cashier: { key: 'cashier', label: 'Cashier / Front desk', home: 'rooms', },
+  waiter: { key: 'waiter', label: 'Waiter', home: 'deliveries', },
+  kitchen: { key: 'kitchen', label: 'Kitchen', home: 'station', },
+  pastry: { key: 'pastry', label: 'Pastry & cake', home: 'station', },
+  barista: { key: 'barista', label: 'Barista', home: 'station', },
+  juice: { key: 'juice', label: 'Juice station', home: 'station', },
+  housekeeping: { key: 'housekeeping', label: 'Housekeeping', home: 'housekeeping', },
+  maintenance: { key: 'maintenance', label: 'Maintenance', home: 'maintenance', },
 };
 
 /** Which staff roles are allowed where. */

@@ -5,15 +5,16 @@ order from the room with a QR code, and the kitchen, barista and juice stations 
 exactly their own tickets. Everything is live — a tap at the desk shows up on the station
 screen in under a second.
 
-Built as a real application: **React front end + Node/Express API + SQLite database**
-(the old single-file demo lives in `legacy/`).
+Built as a real application: **React front end + Node/Express API**, with either the
+built-in **SQLite** file database or a **PostgreSQL** server (`DATABASE_URL=postgres://…`)
+— both are supported by the same code (the old single-file demo lives in `legacy/`).
 
 ---
 
 ## Run it
 
 ```bash
-npm install          # once
+npm install          # once (Node 22.5+)
 npm start            # API + built app  →  http://localhost:4000
 ```
 
@@ -27,7 +28,18 @@ npm run smoke        # headless walkthrough of every role and screen (needs npm 
 ```
 
 The database is a single file: `server/data/clove.db`. Delete it (or run
-`npm run reset-demo`) to start over.
+`npm run reset-demo`) to start over. Set `DATABASE_URL=postgres://user:pass@host:5432/db`
+to keep everything in PostgreSQL instead — the system picks the engine at boot.
+
+### Deploy on a VPS (Coolify)
+
+```bash
+cp .env.example .env      # set POSTGRES_PASSWORD
+docker compose up -d --build
+```
+
+One container serves the web app and the API, one PostgreSQL container holds the data.
+Coolify step-by-step (domains, HTTPS, volumes, health checks) is in **[COOLIFY.md](COOLIFY.md)**.
 
 ### Demo sign-ins — PIN `1234` for all
 
@@ -72,7 +84,7 @@ the cashier can do all of it by hand.
   and the bill starts counting.
 
 **The questions on that form are yours.** Admin → *Guest details* builds the registration
-form: label in English and Amharic, type (text, number, phone, email, date, select,
+form: label in English, type (text, number, phone, email, date, select,
 textarea), required or not, options, order. Add “Plate number” for hotels with parking,
 drop “Passport” if you never take foreign guests.
 
@@ -89,6 +101,15 @@ drop “Passport” if you never take foreign guests.
 
 Nothing changes these by hand: checking a guest out turns the room purple, starting a
 clean turns it blue, finishing turns it green (or inspected).
+
+### Receipts
+
+At checkout the cashier taps **Print receipt** and a clean paper receipt comes out:
+hotel letterhead, room, guest, itemised room-nights, food and services, payments and the
+balance. It looks like the hotel's official receipt but adds **no tax lines** — it is the
+demo/system receipt, not the fiscal one. Printing goes through the browser's print
+dialog, so **any USB thermal receipt printer (80 mm) or captain order printer the
+computer already knows works**; "Save as PDF" keeps an electronic copy.
 
 ### Nothing is charged twice
 

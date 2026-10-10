@@ -1,11 +1,23 @@
 /**
- * SQLite storage for Clove House.
- * One file, no external service — easy to back up (copy server/data/clove.db).
+ * Storage for the hotel system. Two engines, one small interface:
+ *
+ *   · SQLite   — default, one file (server/data/clove.db), zero setup.
+ *   · PostgreSQL — set DATABASE_URL=postgres://… and the whole system runs on
+ *     a managed Postgres (Coolify one-click database, VPS, etc).
+ *
+ * Everything above this file uses the same API:
+ *
+ *   db.prepare(sql).get(...params) / .all(...params) / .run(...params)
+ *   db.exec(sql)
+ *
+ * The PostgreSQL engine (server/db-pg.js) rewrites the same SQL and executes it
+ * on a worker thread behind that synchronous facade, so no call site changes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
+import { createPgEngine } from './db-pg.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.join(here, 'data');
@@ -19,9 +31,60 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(ID_DIR, { recursive: true });
 
-export const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const usePg = /^postgres(ql)?:\/\//i.test(DATABASE_URL);
+
+/** Values the file engine accepts — map the JS ones the app passes. */
+function normalizeValue(value) {
+  if (value === undefined) return null;
+  if (value === true) return 1;
+  if (value === false) return 0;
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+const normalizeParams = (params) => {
+  if (params.length === 1 && params[0] !== null && typeof params[0] === 'object'
+    && !Array.isArray(params[0]) && !(params[0] instanceof Date) && !Buffer.isBuffer(params[0])) {
+    const bag = params[0];
+    const out = {};
+    for (const [key, value] of Object.entries(bag)) out[key] = normalizeValue(value);
+    return [out];
+  }
+  return params.map(normalizeValue);
+};
+
+function createSqliteEngine(file) {
+  const sqlite = new DatabaseSync(file);
+  sqlite.exec('PRAGMA journal_mode = WAL');
+  sqlite.exec('PRAGMA foreign_keys = ON');
+  const cache = new Map();
+  const prep = (sql) => {
+    let stmt = cache.get(sql);
+    if (!stmt) {
+      stmt = sqlite.prepare(sql);
+      cache.set(sql, stmt);
+    }
+    return stmt;
+  };
+  return {
+    driver: 'sqlite',
+    prepare: (sql) => ({
+      get: (...params) => prep(sql).get(...normalizeParams(params)),
+      all: (...params) => prep(sql).all(...normalizeParams(params)),
+      run: (...params) => {
+        const result = prep(sql).run(...normalizeParams(params));
+        return { changes: Number(result.changes), lastInsertRowid: result.lastInsertRowid };
+      },
+    }),
+    exec: (sql) => sqlite.exec(sql),
+    wipeTable: (table) => sqlite.exec(`DELETE FROM ${table}`),
+    foreignKeys: (on) => sqlite.exec(`PRAGMA foreign_keys = ${on ? 'ON' : 'OFF'}`),
+    close: () => sqlite.close(),
+  };
+}
+
+export const db = usePg ? createPgEngine(DATABASE_URL) : createSqliteEngine(DB_PATH);
+export const DB_DRIVER = db.driver;
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS settings (

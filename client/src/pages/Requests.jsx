@@ -61,12 +61,8 @@ export default function Requests() {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Straight from the room · ከክፍል የመጡ ጥያቄዎች</div>
+          <div className="eyebrow">Guest requests</div>
           <h1>Guest requests</h1>
-          <p className="page-desc">
-            Guests tap what they need on the QR code. Each request lands here for the department that owns it —
-            tap <strong>Accept</strong> when you are going, then <strong>Done</strong> when it is delivered.
-          </p>
         </div>
         <button className="btn" onClick={() => loadGuestRequests()}>
           <Icon name="rotate-ccw" size={14} /> Refresh
@@ -74,7 +70,7 @@ export default function Requests() {
       </div>
 
       <div className="grid grid-3" style={{ marginBottom: 18 }}>
-        <Stat label="Waiting" value={open.filter((r) => r.status === 'new').length} icon="bell" alert={open.some((r) => r.status === 'new')} foot="Nobody has picked them up yet" />
+        <Stat label="Waiting" value={open.filter((r) => r.status ==='new').length} icon="bell" alert={open.some((r) => r.status === 'new')} foot="Nobody has picked them up yet" />
         <Stat label="On the way" value={open.filter((r) => r.status === 'accepted').length} icon="send" foot="Someone is handling it" />
         <Stat label="Waiting over 15 min" value={waiting.length} icon="alert" alert={waiting.length > 0} foot="A guest is still waiting" />
       </div>
@@ -92,7 +88,7 @@ export default function Requests() {
       {open.length === 0 ? (
         <Empty title="Nothing asked for right now" hint="When a guest taps the QR code in their room, the request arrives here." icon="bell" />
       ) : (
-        <Card title="Open requests" subtitle="Oldest first — the guest is counting the minutes" noBody>
+        <Card title="Open requests" noBody>
           <table>
             <thead>
               <tr>
@@ -113,7 +109,7 @@ export default function Requests() {
                     <td><strong>Room {request.room_number}</strong><div className="tiny muted">{request.guest_name}</div></td>
                     <td>
                       <strong>{request.label}</strong>
-                      <div className="tiny muted">{request.am}</div>
+                      
                     </td>
                     <td className="small">{request.note || '—'}</td>
                     <td className="small muted">{request.department}</td>
@@ -134,7 +130,7 @@ export default function Requests() {
       )}
 
       {visible.filter((request) => request.status === 'done').length ? (
-        <Card title="Finished in the last hours" subtitle="For the record" noBody>
+        <Card title="Finished in the last hours" noBody>
           <table>
             <thead>
               <tr><th>Room</th><th>What</th><th>Note</th><th>Handled by</th><th>Finished</th></tr>

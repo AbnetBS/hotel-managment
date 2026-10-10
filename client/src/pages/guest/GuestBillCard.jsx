@@ -42,7 +42,7 @@ export default function GuestBillCard({ bill, room, loading }) {
   if (!bill) {
     return (
       <div className="card card-pad">
-        <h2>Your bill · ሂሳብዎ</h2>
+        <h2>Your bill</h2>
         <p className="small muted" style={{ marginTop: 10 }}>
           Nothing is charged to Room {room?.number} yet. Anything you order from the room appears here straight away.
         </p>
@@ -55,19 +55,15 @@ export default function GuestBillCard({ bill, room, loading }) {
       <div className="card card-pad">
         <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h2>Your bill · ሂሳብዎ</h2>
-            <p className="small muted" style={{ marginTop: 6 }}>Everything charged to Room {room?.number} during your stay.</p>
-          </div>
+            <h2>Your bill</h2>
+                      </div>
           <span className="pill open"><i />{bill.stay?.code}</span>
         </div>
 
         {foreign ? (
           <div className="banner info" style={{ marginTop: 12 }}>
             <Icon name="exchange" size={15} />
-            <span>
-              You are billed in <strong>{currency}</strong> at the rate agreed when you checked in ({rate} birr per 1 {currency}).
-              The desk takes payment in {currency}.
-            </span>
+            <span><strong>{currency}</strong> @ {rate}</span>
           </div>
         ) : null}
 
@@ -100,20 +96,8 @@ export default function GuestBillCard({ bill, room, loading }) {
 
           {Number(bill.discount) > 0 ? (
             <div className="bill-line neg">
-              <div className="desc">Discount · ቅናሽ</div>
+              <div className="desc">Discount</div>
               <strong>-{format(bill.discount)}</strong>
-            </div>
-          ) : null}
-          {bill.service_charge_percent ? (
-            <div className="bill-line">
-              <div className="desc">Service charge · {bill.service_charge_percent}%</div>
-              <strong>{format(bill.service)}</strong>
-            </div>
-          ) : null}
-          {bill.vat_percent ? (
-            <div className="bill-line">
-              <div className="desc">VAT · {bill.vat_percent}%</div>
-              <strong>{format(bill.vat)}</strong>
             </div>
           ) : null}
           <div className="bill-total">

@@ -5,7 +5,7 @@ import { Icon, ROLE_ICON } from './lib/icons.jsx';
 import { canSee, ROLES } from '../../shared/billing.js';
 import { dayShort } from './lib/format.js';
 
-import Login from './pages/Login.jsx';
+import Landing from './pages/Landing.jsx';
 // Guest pages stay in the first download — a guest standing at the door should
 // never wait for a second round-trip over hotel Wi-Fi.
 import GuestMenu from './pages/guest/GuestMenu.jsx';
@@ -255,7 +255,7 @@ function Shell() {
 
 function StaffApp() {
   const { user, loading } = useApp();
-  if (!user) return <Login />;
+  if (!user) return <Landing />;
   if (loading) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', height: '100vh', color: 'var(--ink-faint)' }}>
