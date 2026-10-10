@@ -114,6 +114,8 @@ export function stayView(stayId) {
     guest: guestView(guest),
     billing_mode: stay.billing_mode,
     rate: stay.rate,
+    // The price per night as written at check-in, in the guest's own currency.
+    rate_foreign: stay.rate_foreign ?? stay.rate,
     // The money the guest agreed to pay in, frozen at check-in.
     currency: stay.currency || 'ETB',
     fx_rate: stay.fx_rate || (stay.currency && stay.currency !== 'ETB' ? null : 1),
@@ -133,6 +135,7 @@ export function stayView(stayId) {
     items: clean.map((i) => ({
       id: i.id, kind: i.kind, description: i.description, qty: i.qty, amount: i.amount, station: i.station,
       method: i.method, order_id: i.order_id, created_at: i.created_at, bill_date: i.bill_date, created_by: i.created_by,
+      currency: i.currency || null, foreign_amount: i.foreign_amount || null,
     })),
     voidItems: items.filter((i) => i.void).map((i) => ({ id: i.id, description: i.description, amount: i.amount })),
     orderCodes: orders.map((o) => o.code),
@@ -265,6 +268,33 @@ export function reservations() {
       nights: r.nights, rate: r.rate, source: r.source, status: r.status, deposit: r.deposit, note: r.note,
     };
   });
+}
+
+export function receipts({ search, limit = 100 } = {}) {
+  const rows = search
+    ? db.prepare(`SELECT * FROM receipts WHERE room_label LIKE ? OR guest_name LIKE ? OR invoice_no LIKE ?
+                  ORDER BY printed_at DESC LIMIT ?`).all(`%${search}%`, `%${search}%`, `%${search}%`, limit)
+    : db.prepare('SELECT * FROM receipts ORDER BY printed_at DESC LIMIT ?').all(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    invoice_no: r.invoice_no,
+    kind: r.kind,
+    stay_id: r.stay_id,
+    order_id: r.order_id,
+    room_label: r.room_label,
+    guest_name: r.guest_name,
+    currency: r.currency || 'ETB',
+    fx_rate: r.fx_rate || 1,
+    room_total_foreign: r.room_total_foreign || 0,
+    room_total_etb: r.room_total_etb || 0,
+    extras_total_etb: r.extras_total_etb || 0,
+    total_etb: r.total_etb || 0,
+    rows: JSON.parse(r.rows_json || '[]'),
+    meta: JSON.parse(r.meta_json || '[]'),
+    fs: r.fs,
+    printed_by: r.printed_by,
+    printed_at: r.printed_at,
+  }));
 }
 
 export function tables() {

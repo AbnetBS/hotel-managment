@@ -3,15 +3,115 @@ import { api } from '../lib/api.js';
 import { getToken } from '../lib/api.js';
 import { useApp } from '../lib/store.jsx';
 import { Icon } from '../lib/icons.jsx';
-import { dateTimeOf, dayLong } from '../lib/format.js';
+import { dateTimeOf, dayLong, money } from '../lib/format.js';
 import { Card, Field, Empty, Stat } from '../lib/ui.jsx';
+import { ReceiptModal } from '../components/Receipt.jsx';
 
 export default function AdminSystem({ mode }) {
   if (mode === 'qrcodes') return <QrCodes />;
   if (mode === 'tables') return <TablesPanel />;
   if (mode === 'receipt') return <ReceiptPanel />;
+  if (mode === 'receipts') return <PrintedReceipts />;
   if (mode === 'audit') return <AuditLog />;
   return <SettingsPanel />;
+}
+
+/* --------------------------- printed receipts ---------------------------- */
+/** The soft copy of every slip the desk printed — the owner's paper trail. */
+
+function PrintedReceipts() {
+  const { toast } = useApp();
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(null);
+
+  const load = () => api.get(`/receipts?limit=300${search ? `&search=${encodeURIComponent(search)}` : ''}`)
+    .then((data) => setRows(data.receipts || []))
+    .catch((error) => toast(error.message, 'error'));
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const today = rows.filter((r) => String(r.printed_at).slice(0, 10) === new Date().toISOString().slice(0, 10));
+  const todayTotal = today.reduce((sum, r) => sum + (Number(r.total_etb) || 0), 0);
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Paper trail</div>
+          <h1>Printed receipts</h1>
+        </div>
+        <div className="row">
+          <div className="search">
+            <Icon name="search" size={14} />
+            <input
+              value={search}
+              placeholder="Room, guest or invoice…"
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && load()}
+            />
+          </div>
+          <button className="btn" onClick={load}><Icon name="rotate-ccw" size={14} /> Refresh</button>
+        </div>
+      </div>
+
+      <div className="grid grid-3" style={{ marginBottom: 18 }}>
+        <Stat label="Printed today" value={today.length} icon="print" foot="Slips handed to guests" />
+        <Stat label="Total today" value={money(todayTotal)} icon="banknote" foot="Room + food + services" />
+        <Stat label="On file" value={rows.length} icon="list" foot="Most recent 300" />
+      </div>
+
+      <Card noBody>
+        {rows.length === 0 ? (
+          <Empty title="No receipts printed yet" hint="Every print the cashier makes lands here." icon="print" />
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Printed</th>
+                <th>Invoice</th>
+                <th>Room / table</th>
+                <th>Guest</th>
+                <th>Room (guest money)</th>
+                <th>Food &amp; services</th>
+                <th>Total (birr)</th>
+                <th>Printed by</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td className="small muted">{dateTimeOf(row.printed_at)}</td>
+                  <td className="small">{row.invoice_no || '—'}<div className="tiny muted">FS {row.fs || '—'}</div></td>
+                  <td><strong className="small">{row.room_label}</strong><div className="tiny muted">{row.kind === 'order' ? 'Order' : 'Stay bill'}</div></td>
+                  <td className="small">{row.guest_name || '—'}</td>
+                  <td className="small">{row.currency !== 'ETB' ? `${Number(row.room_total_foreign).toFixed(2)} ${row.currency}` : money(row.room_total_etb)}</td>
+                  <td className="small">{money(row.extras_total_etb)}</td>
+                  <td className="small"><strong>{money(row.total_etb)}</strong></td>
+                  <td className="small muted">{row.printed_by || '—'}</td>
+                  <td>
+                    <button className="btn btn-sm" onClick={() => setOpen(row)}>
+                      <Icon name="eye" size={13} /> Open
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {open ? (
+        <ReceiptModal
+          data={{ ...(open.rows || {}), fs: open.fs }}
+          archive={false}
+          invoiceNo={open.invoice_no}
+          title={`Receipt · ${open.invoice_no || open.room_label}`}
+          onClose={() => setOpen(null)}
+        />
+      ) : null}
+    </>
+  );
 }
 
 /* -------------------------------- tables --------------------------------- */

@@ -25,6 +25,10 @@ export function revenueSummary({ from, to } = {}) {
                                      AND substr(closed_at, 1, 10) BETWEEN ? AND ?`).all(range.from, range.to);
   const counterSales = counterOrders.reduce((s, o) => s + o.total, 0);
 
+  // Every printed slip the desk produced — the owner's paper trail, added up.
+  const printed = db.prepare(`SELECT * FROM receipts WHERE substr(printed_at, 1, 10) BETWEEN ? AND ?`).all(range.from, range.to);
+  const printedTotal = printed.reduce((s, r) => s + (Number(r.total_etb) || 0), 0);
+
   const methods = {};
   for (const i of items.filter((x) => x.kind === 'payment')) {
     const key = i.method || 'Other';
@@ -52,6 +56,8 @@ export function revenueSummary({ from, to } = {}) {
     methods,
     byStation,
     counterOrderCount: counterOrders.length,
+    printedCount: printed.length,
+    printedTotal,
   };
 }
 

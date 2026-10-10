@@ -153,6 +153,12 @@ export function MenuPicker({ value, onChange }) {
                     <button type="button" onClick={() => setQty(line.menu_item_id, line.qty + 1)}>+</button>
                   </div>
                   <strong className="small" style={{ width: 64, textAlign: 'right' }}>{money(line.price * line.qty)}</strong>
+                  <button type="button" className="btn btn-sm btn-ghost" title="Edit line" onClick={() => setQty(line.menu_item_id, line.qty + 1)}>
+                    <Icon name="pencil" size={12} />
+                  </button>
+                  <button type="button" className="btn btn-sm btn-ghost" title="Cancel line" onClick={() => setQty(line.menu_item_id, 0)}>
+                    <Icon name="x" size={12} />
+                  </button>
                 </div>
               </div>
             ))
@@ -168,7 +174,7 @@ export function MenuPicker({ value, onChange }) {
 }
 
 /** Cashier: take an order for a room, or a walk-in order paid at the till. */
-export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', onClose, onDone }) {
+export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', chargeNow = false, onClose, onDone }) {
   const { rooms, toast, loadOrders } = useApp();
   const [channel, setChannel] = useState(defaultChannel);
   const [roomId, setRoomId] = useState(defaultRoomId || '');
@@ -190,9 +196,12 @@ export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', onClo
         room_id: roomId || null,
         guest_name: channel === 'counter' ? guestName : undefined,
         note,
+        charge_now: chargeNow,
         items: lines.map((line) => ({ menu_item_id: line.menu_item_id, qty: line.qty })),
       });
-      toast(`Order #${result.order.code} is in the queue — accept it, then send it to the stations.`);
+      toast(chargeNow
+        ? `${money(total)} added to the bill — it is on the receipt at checkout.`
+        : `Order #${result.order.code} is in the queue — accept it, then send it to the stations.`);
       await loadOrders();
       onDone?.(result.order);
       onClose();
@@ -205,18 +214,20 @@ export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', onClo
 
   return (
     <Modal
-      title="New order"
+      title={chargeNow ? 'Outdoor order' : 'New order'}
+      subtitle={chargeNow ? 'Pick from the menu, edit or cancel lines, then save — it lands on the bill.' : undefined}
       onClose={onClose}
       size="xwide"
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={submit} disabled={busy}>
-            <Icon name="send" size={14} /> Send to the desk queue
+            <Icon name={chargeNow ? 'check' : 'send'} size={14} /> {chargeNow ? `Save to bill · ${money(total)}` : 'Send to the desk queue'}
           </button>
         </>
       }
     >
+      {chargeNow ? null : (
       <div className="grid grid-4" style={{ marginBottom: 16 }}>
         <Field label="Who is it for?">
           <select value={channel} onChange={(event) => setChannel(event.target.value)}>
@@ -249,12 +260,13 @@ export function NewOrderModal({ defaultRoomId, defaultChannel = 'outdoor', onClo
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional" />
         </Field>
       </div>
+      )}
 
       <MenuPicker value={lines} onChange={setLines} />
 
       <div className="banner info" style={{ marginTop: 14 }}>
         <Icon name="receipt" size={15} />
-        <span>{money(total)}</span>
+        <span>{chargeNow ? `On the bill: ${money(total)}` : money(total)}</span>
       </div>
     </Modal>
   );

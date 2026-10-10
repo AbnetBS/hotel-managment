@@ -87,6 +87,27 @@ export const db = usePg ? createPgEngine(DATABASE_URL) : createSqliteEngine(DB_P
 export const DB_DRIVER = db.driver;
 
 db.exec(`
+CREATE TABLE IF NOT EXISTS receipts (
+  id TEXT PRIMARY KEY,
+  invoice_no TEXT,
+  kind TEXT,
+  stay_id TEXT,
+  order_id TEXT,
+  room_label TEXT,
+  guest_name TEXT,
+  currency TEXT,
+  fx_rate REAL,
+  room_total_foreign REAL,
+  room_total_etb REAL,
+  extras_total_etb REAL,
+  total_etb REAL,
+  rows_json TEXT,
+  meta_json TEXT,
+  fs TEXT,
+  printed_by TEXT,
+  printed_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
@@ -493,6 +514,7 @@ ensureColumn('housekeeping_tasks', 'started_at', 'TEXT');
 ensureColumn('folio_items', 'client_ref', 'TEXT');
 // currency on the folio: a bill can be quoted in the guest's own money
 ensureColumn('stays', 'currency', 'TEXT');
+  ensureColumn('stays', 'rate_foreign', 'REAL');
 ensureColumn('stays', 'fx_rate', 'REAL');
 ensureColumn('folio_items', 'currency', 'TEXT');
 ensureColumn('folio_items', 'fx_rate', 'REAL');

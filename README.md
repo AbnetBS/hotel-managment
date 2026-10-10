@@ -110,6 +110,43 @@ order printer — the browser print dialog works with **any USB thermal receipt 
 (80 mm)** the computer already knows; "Save as PDF" keeps an electronic copy. Order
 receipts (with totals) print the same way from the live-orders cards and the orders desk.
 
+### Check-in, prices and currencies
+
+The cashier clicks the room rectangle, fills the guest form (name, phone, ID…) and
+writes the **price per night** herself. Next to it is the **currency**: ETB by default,
+and clicking opens a searchable list — **the common ten first** (USD, EUR, GBP, AED,
+SAR, KES, TRY, ZAR, CNY, JPY), then almost every currency below. Foreign guests are
+the reason: the room is billed in their money.
+
+The room drawer leads with the counter — **days × the price she wrote = room total**
+in the guest's currency. Below it:
+
+- **Outdoor** — the same menu as the scanned QR. She picks items, edits or cancels
+  lines, then **Save**: the amount lands on the bill (in birr).
+- **Other service** — *Add service* (laundry, taxi…) and *Add item* (water, extra bed…)
+  rows, each with a name and price, then **Save**.
+
+### Separated money on the receipt
+
+When the guest pays in a foreign currency the receipt keeps the two purses apart:
+the **room block prints in that currency** (units × the price written at check-in),
+and **food, drinks and other services print in birr**, each with its own total.
+Payments print in the currency they were taken in.
+
+### Printed receipts — the admin keeps every copy
+
+Every **Print** leaves a soft copy on the admin page **Printed receipts** — date,
+invoice, FS number, room/table, guest, both totals and who printed it. Open one to
+see it exactly as printed (reprints keep their FS number). The reports add them up
+per period.
+
+### Rooms
+
+The rectangles are the owner's control board: **green = free**, **orange = someone
+is in**, purple/blue = cleaning. When the cashier does **Print & check out** the room
+goes **straight back to green** and the receipt is filed; a plain bill close still
+sends the room through housekeeping (purple → clean → green).
+
 ### Tables & QR codes
 
 Every **table** and every **room** has its own unique QR code. The admin adds tables

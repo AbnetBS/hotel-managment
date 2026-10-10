@@ -184,7 +184,7 @@ export const ROLES = {
 export const ROLE_NAV = {
   admin: ['overview', 'rooms', 'requests', 'orders', 'reservations', 'stays', 'folios', 'reports', 'tables',
     'roomtypes', 'menu', 'qrcodes', 'inventory', 'lostfound', 'currency', 'branches', 'staff', 'formbuilder',
-    'housekeeping', 'maintenance', 'receipt', 'settings', 'audit'],
+    'housekeeping', 'maintenance', 'receipt', 'receipts', 'settings', 'audit'],
   cashier: ['rooms', 'requests', 'orders', 'stays', 'folios', 'reservations', 'lostfound'],
 };
 

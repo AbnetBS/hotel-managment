@@ -52,6 +52,60 @@ check('delivering a table order marks it charged to the till', delivered.status 
 const closed = await api(cashier, `/orders/${orderId}/close`, { method: 'POST', body: JSON.stringify({ paid_method: 'cash' }) });
 check('the table order closes', closed.status === 200 && closed.body.order?.status === 'completed', `status=${closed.body.order?.status}`);
 
+/* --------------------- check-in price in the guest's money ---------------- */
+
+const freeForFx = (await api(cashier, '/rooms')).body.rooms.find((r) => r.status === 'available');
+const usdCheckin = await api(cashier, `/rooms/${freeForFx.id}/checkin`, {
+  method: 'POST',
+  body: JSON.stringify({
+    guest: { full_name: 'Dollar Guest', phone: '+1 202 555 0100' },
+    currency: 'USD', fxRate: 58, rate: 100 * 58, rateForeign: 100, billingMode: 'nightly',
+  }),
+});
+check('a guest can be checked in with a price per night in dollars', usdCheckin.status === 200, usdCheckin.body.error || 'ok');
+const usdStay = (await api(cashier, `/stays/${usdCheckin.body.stayId}`)).body.stay;
+check('the stay keeps the price she wrote in dollars', usdStay.rate_foreign === 100 && usdStay.currency === 'USD',
+  `${usdStay.rate_foreign} ${usdStay.currency} · ${usdStay.rate} ETB on the folio`);
+
+/* --------------- outdoor order saved straight onto the bill --------------- */
+
+const foodItem = menu.items.find((i) => i.station === 'kitchen');
+const outdoor = await api(cashier, '/orders', {
+  method: 'POST',
+  body: JSON.stringify({
+    room_id: freeForFx.id, channel: 'outdoor', charge_now: true,
+    items: [{ menu_item_id: foodItem.id, qty: 2 }],
+  }),
+});
+check('an outdoor order can be saved straight to the bill', outdoor.status === 200 && outdoor.body.order?.status === 'completed',
+  `order #${outdoor.body.order?.code} · ${outdoor.body.order?.status} · charged=${outdoor.body.order?.charged}`);
+const usdFolio = (await api(cashier, `/stays/${usdCheckin.body.stayId}`)).body.stay;
+check('the food lands on the bill as birr alongside the dollar room', usdFolio.items.some((i) => i.kind === 'food'),
+  `room ${usdFolio.totals?.room} ETB + food ${usdFolio.totals?.food} ETB · rate_foreign ${usdStay.rate_foreign} USD`);
+
+/* ---------------------- printed soft copy + green room -------------------- */
+
+const saveReceipt = await api(cashier, '/receipts', {
+  method: 'POST',
+  body: JSON.stringify({
+    invoice_no: 'CS_TEST_1', kind: 'folio', stay_id: usdCheckin.body.stayId,
+    room_label: `Room ${freeForFx.number}`, guest_name: 'Dollar Guest', currency: 'USD', fx_rate: 58,
+    room_total_foreign: 100, room_total_etb: 5800, extras_total_etb: usdFolio.totals?.food || 0,
+    total_etb: (usdFolio.totals?.total || 0), rows: { blocks: [] }, meta: [['Room', freeForFx.number]], fs: '00000001',
+  }),
+});
+const receiptsList = await api(cashier, '/receipts');
+check('printing leaves a soft copy for the admin', saveReceipt.status === 200 && receiptsList.body.receipts?.some((r) => r.invoice_no === 'CS_TEST_1'),
+  `${receiptsList.body.receipts?.length} on file`);
+
+const greenOut = await api(cashier, `/stays/${usdCheckin.body.stayId}/checkout`, {
+  method: 'POST',
+  body: JSON.stringify({ payments: [], release: true, releaseStatus: 'available' }),
+});
+const greenRoom = (await api(cashier, '/rooms')).body.rooms.find((r) => r.id === freeForFx.id);
+check('printing checkout frees the room green again', greenOut.status === 200 && greenRoom.status === 'available',
+  `status=${greenRoom.status}`);
+
 /* ------------------------------- receipt FS ------------------------------- */
 
 const fs1 = await api(cashier, '/receipt/next-fs', { method: 'POST', body: '{}' });

@@ -210,7 +210,16 @@ core.get('/orders/:id', requireAuth, (req, res) => {
 });
 
 core.post('/orders', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
-  const result = actions.createOrder({ ...req.body, clientRef: req.body?.client_ref, actor: req.user });
+  const result = actions.createOrder({
+    ...req.body,
+    roomId: req.body?.roomId ?? req.body?.room_id,
+    stayId: req.body?.stayId ?? req.body?.stay_id,
+    tableId: req.body?.tableId ?? req.body?.table_id,
+    guestName: req.body?.guestName ?? req.body?.guest_name,
+    chargeNow: Boolean(req.body?.charge_now ?? req.body?.chargeNow),
+    clientRef: req.body?.client_ref,
+    actor: req.user,
+  });
   if (result.error) return res.status(400).json(result);
   res.json(result);
 });
@@ -496,6 +505,36 @@ core.get('/reports/guests', requireAuth, requireRole('manager', 'admin', 'cashie
 /* -------------------------------- tables --------------------------------- */
 
 core.get('/tables', requireAuth, (req, res) => res.json({ tables: repo.tables() }));
+
+/* --------------------------- printed receipts ----------------------------- */
+/** Every printed slip leaves a soft copy behind — the admin page and the
+ *  reports read these; the cashier's printer is not the only record. */
+core.post('/receipts', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {
+  const b = req.body || {};
+  const result = actions.saveReceipt({
+    invoiceNo: b.invoiceNo ?? b.invoice_no,
+    kind: b.kind,
+    stayId: b.stayId ?? b.stay_id,
+    orderId: b.orderId ?? b.order_id,
+    roomLabel: b.roomLabel ?? b.room_label,
+    guestName: b.guestName ?? b.guest_name,
+    currency: b.currency,
+    fxRate: b.fxRate ?? b.fx_rate,
+    roomTotalForeign: b.roomTotalForeign ?? b.room_total_foreign,
+    roomTotalEtb: b.roomTotalEtb ?? b.room_total_etb,
+    extrasTotalEtb: b.extrasTotalEtb ?? b.extras_total_etb,
+    totalEtb: b.totalEtb ?? b.total_etb,
+    rows: b.rows,
+    meta: b.meta,
+    fs: b.fs,
+    actor: req.user,
+  });
+  res.json(result);
+});
+
+core.get('/receipts', requireAuth, (req, res) => {
+  res.json({ receipts: repo.receipts({ search: req.query.search, limit: Number(req.query.limit) || 100 }) });
+});
 
 /** The next FS number for a printed receipt — the counter moves on every print. */
 core.post('/receipt/next-fs', requireAuth, requireRole('cashier', 'manager', 'admin'), (req, res) => {

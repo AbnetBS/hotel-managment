@@ -386,7 +386,10 @@ async function main() {
   const ticking = /Next (night|hour|day-use block) starts in/.test(drawer);
   log(`   · occupied room drawer: live counter ${ticking ? 'ticking' : 'MISSING'} · bill panel ${/Balance to collect/.test(drawer) ? 'present' : 'MISSING'}`);
   if (!ticking) problems.push('[cashier] the live billing countdown is missing on an occupied room');
-  if (!/Paid & release/.test(drawer)) problems.push('[cashier] the Paid & release button is missing');
+  if (!/Check out & print/.test(drawer)) problems.push('[cashier] the Check out & print button is missing');
+  if (!/Outdoor/.test(drawer)) problems.push('[cashier] the Outdoor button is missing');
+  if (!/Other service/.test(drawer)) problems.push('[cashier] the Other service button is missing');
+  if (!/×/.test(drawer)) problems.push('[cashier] the days × price counter is missing');
   closeDrawer(w);
   await wait(300);
 
@@ -517,6 +520,7 @@ async function main() {
     ['tables', /Tables/],
     ['qrcodes', /Room QR codes/],
     ['receipt', /Receipt template/],
+    ['receipts', /Printed receipts/],
     ['formbuilder', /Guest form/i],
     ['inventory', /Inventory/i],
     ['lostfound', /Lost & found/],

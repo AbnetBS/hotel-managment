@@ -261,11 +261,12 @@ function Reports() {
         </div>
       </div>
 
-      <div className="grid grid-4" style={{ marginBottom: 18 }}>
+      <div className="grid grid-5" style={{ marginBottom: 18 }}>
         <Stat label="Revenue in range" value={money(revenue.net)} icon="trending-up" foot={`${range.from} → ${range.to}`} />
         <Stat label="Rooms" value={money(revenue.rooms)} icon="door" foot="Settled room charges" />
         <Stat label="Food & drinks" value={money(revenue.food)} icon="utensils" foot={`${money(revenue.counterSales)} walk-in money`} />
         <Stat label="Money received" value={money(revenue.payments)} icon="banknote" foot={`${money(revenue.discounts)} in discounts`} />
+        <Stat label="Printed receipts" value={revenue.printedCount || 0} icon="print" foot={`${money(revenue.printedTotal || 0)} on file · admin page`} />
       </div>
 
       <div style={{ marginBottom: 18 }}>

@@ -24,7 +24,7 @@ export function resetAll() {
     'guests', 'menu_items', 'menu_categories', 'rooms', 'room_types', 'registration_fields', 'housekeeping_tasks',
     'guest_requests', 'lost_found', 'inventory_items', 'recipe_items', 'stock_moves', 'purchase_requests',
     'approvals', 'services', 'branches',
-    'maintenance_issues', 'users', 'settings', 'tables',
+    'maintenance_issues', 'users', 'settings', 'tables', 'receipts',
   ];
   db.foreignKeys(false);
   for (const t of tables) db.wipeTable(t);

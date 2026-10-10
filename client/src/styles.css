@@ -176,7 +176,7 @@ tbody tr:hover { background: #fafcfb; }
 .room-tile .meta { margin-top: 8px; display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-soft); }
 .room-tile .bill { font-weight: 700; color: var(--ink); }
 .room-tile.free:after { background: var(--green); }
-.room-tile.busy:after { background: var(--red); }
+.room-tile.busy:after { background: #e08a2e; }
 .room-tile.reserved:after { background: #d5a35c; }
 .room-tile.service:after, .room-tile.working:after { background: var(--blue); }
 .room-tile.needs-clean:after { background: var(--purple); }
@@ -184,7 +184,7 @@ tbody tr:hover { background: #fafcfb; }
 .room-tile.working { background: linear-gradient(180deg, #fff 55%, #f1f7fd); }
 .room-tile.inspected:after { background: var(--teal); }
 .room-tile.blocked:after { background: var(--purple); }
-.room-tile.busy { background: linear-gradient(180deg, #fff 55%, #fdf3f1); }
+.room-tile.busy { background: linear-gradient(180deg, #fff 55%, #fdf6ec); }
 .room-tile.dim { opacity: .62; }
 .room-tile .flag.stack { flex-direction: column; align-items: flex-end; gap: 4px; }
 .tile-note { font-size: 10px; padding: 3px 7px; }
@@ -385,6 +385,24 @@ tbody tr:hover { background: #fafcfb; }
 .r-pay { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
 .r-itemcount { font-size: 11px; margin-top: 8px; }
 .r-foot { font-size: 11px; margin-top: 4px; }
+
+/* ------------------------- currency picker (check-in) ---------------------- */
+.cur-picker { position: relative; }
+.cur-button { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid var(--line-dark); border-radius: 12px; padding: 11px 12px; background: #fff; font: inherit; cursor: pointer; text-align: left; }
+.cur-button .cur-code { font-weight: 800; }
+.cur-button .cur-name { flex: 1; color: var(--ink-soft); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cur-menu { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0; background: #fff; border: 1px solid var(--line-dark); border-radius: 12px; box-shadow: 0 18px 44px rgba(20,36,37,.18); overflow: hidden; }
+.cur-search { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.cur-search input { border: 0; outline: none; width: 100%; font: inherit; font-size: 13px; }
+.cur-list { max-height: 260px; overflow-y: auto; padding: 6px; }
+.cur-group { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-faint); padding: 8px 10px 4px; }
+.cur-row { display: flex; gap: 10px; align-items: center; width: 100%; border: 0; background: none; padding: 8px 10px; border-radius: 8px; font: inherit; cursor: pointer; text-align: left; }
+.cur-row:hover { background: #f2f8f6; }
+.cur-row.on { background: var(--green-soft, #e7f4ee); }
+.cur-row .cur-code { font-weight: 700; width: 52px; }
+.cur-row .cur-name { color: var(--ink-soft); font-size: 12.5px; }
+.cur-empty { padding: 14px; color: var(--ink-faint); font-size: 12.5px; }
+.r-block-title { font-weight: 800; font-size: 10.5px; letter-spacing: .8px; margin: 6px 0 2px; }
 
 /* ---------------------- live orders strip on the board --------------------- */
 .order-card { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: #fff; }
